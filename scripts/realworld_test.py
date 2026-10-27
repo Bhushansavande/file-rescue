@@ -122,7 +122,7 @@ def build_image(kind, img, media):
     run(["truncate", "-s", "256M", img])
     names = sorted(os.listdir(media))
     if kind == "FAT32":
-        run(["mkfs.vfat", "-F", "32", "-s", "8", img])
+        run(["mkfs.vfat", "-F", "32", "-s", "4", img])
         for n in names:
             run(["mcopy", "-i", img, os.path.join(media, n), "::" + n])
         for n in names:

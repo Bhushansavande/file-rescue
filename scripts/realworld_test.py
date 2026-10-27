@@ -26,9 +26,25 @@ from filerescue.carver import carve  # noqa: E402
 os.environ["PATH"] += os.pathsep + os.pathsep.join(["/usr/sbin", "/sbin"])
 
 
+def run(cmd, **kw):
+    """subprocess.run that always captures output and explains failures."""
+    r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    if r.returncode:
+        tail = (r.stderr or r.stdout or "").strip()[-600:]
+        raise RuntimeError(f"command failed ({r.returncode}): {' '.join(map(str, cmd))[:200]} :: {tail}")
+    return r
+
+
+def fail(msg):
+    """Print an error that GitHub Actions also shows as an annotation, then exit."""
+    if os.environ.get("GITHUB_ACTIONS"):
+        print("::error title=realworld_test::" + msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+    sys.exit(msg)
+
+
 def need(tool):
     if not shutil.which(tool):
-        sys.exit(f"Missing tool: {tool}")
+        fail(f"Missing tool: {tool} (PATH={os.environ['PATH']})")
 
 
 def make_media(d):
@@ -74,7 +90,7 @@ def make_media(d):
     zipit("archive.zip", {"a.txt": "hello" * 5000, "b.bin": blob(50000)})
 
     def ff(*args):
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *args], check=True)
+        run(["ffmpeg", "-loglevel", "error", "-y", *args])
 
     v = ["-f", "lavfi", "-i"]
     ff(*v, "testsrc2=size=640x360:rate=25", *v, "sine=frequency=440", "-t", "6",
@@ -103,19 +119,19 @@ def sha(path):
 
 
 def build_image(kind, img, media):
-    subprocess.run(["truncate", "-s", "256M", img], check=True)
+    run(["truncate", "-s", "256M", img])
     names = sorted(os.listdir(media))
     if kind == "FAT32":
-        subprocess.run(["mkfs.vfat", "-F", "32", "-s", "8", img], check=True, capture_output=True)
+        run(["mkfs.vfat", "-F", "32", "-s", "8", img])
         for n in names:
-            subprocess.run(["mcopy", "-i", img, os.path.join(media, n), "::" + n], check=True)
+            run(["mcopy", "-i", img, os.path.join(media, n), "::" + n])
         for n in names:
-            subprocess.run(["mdel", "-i", img, "::" + n], check=True)
+            run(["mdel", "-i", img, "::" + n])
     else:
-        subprocess.run(["mke2fs", "-q", "-F", "-t", "ext4", "-b", "4096", img], check=True)
+        run(["mke2fs", "-q", "-F", "-t", "ext4", "-b", "4096", img])
         cmds = "".join(f"write {os.path.join(media, n)} {n}\n" for n in names)
         cmds += "".join(f"rm {n}\n" for n in names)
-        subprocess.run(["debugfs", "-w", img], input=cmds, text=True, check=True, capture_output=True)
+        run(["debugfs", "-w", img], input=cmds)
 
 
 def main():
@@ -144,4 +160,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        fail(f"{type(e).__name__}: {e}")

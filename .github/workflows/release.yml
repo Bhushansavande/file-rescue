@@ -49,6 +49,8 @@ jobs:
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           Write-Output "tag=$tag exists=$exists"
+          # "release not found" is an expected answer, not a failure of this step
+          $global:LASTEXITCODE = 0
 
       - name: Install build tools
         if: steps.tag.outputs.exists == 'false'

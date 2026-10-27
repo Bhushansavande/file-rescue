@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.idea/
+.vscode/
+
+# रिकव्हर केलेल्या फाइल्स आणि डिस्क इमेजेस कधीही repo मध्ये टाकू नका
+recovered/
+output/
+*.img
+*.dd
+*.iso

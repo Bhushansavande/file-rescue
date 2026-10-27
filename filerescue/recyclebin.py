@@ -1,8 +1,8 @@
-"""Windows Recycle Bin मधील फाइल्स मूळ नावासह परत मिळवा.
+"""Recover files from the Windows Recycle Bin, with their original names.
 
-Recycle Bin मध्ये प्रत्येक डिलीट फाइलसाठी दोन फाइल्स असतात:
-  $I......  = माहिती (मूळ पथ, आकार, डिलीट केल्याची वेळ)
-  $R......  = प्रत्यक्ष फाइल (किंवा फोल्डर)
+For every deleted file the Recycle Bin keeps two entries:
+  $I......  = metadata (original path, size, deletion time)
+  $R......  = the actual file (or folder)
 """
 
 import os
@@ -17,14 +17,14 @@ class BinItem:
     original_path: str
     size: int
     deleted_at: datetime
-    data_path: str  # $R... चा पथ (अस्तित्वात असल्यास)
+    data_path: str  # path of the matching $R... entry, or "" if it no longer exists
 
 
 def parse_i_file(path):
     with open(path, "rb") as fh:
         data = fh.read()
     if len(data) < 24:
-        raise ValueError("$I फाइल खूप लहान आहे")
+        raise ValueError("$I file is too short")
     version = int.from_bytes(data[0:8], "little")
     size = int.from_bytes(data[8:16], "little")
     ft = int.from_bytes(data[16:24], "little")
@@ -39,7 +39,7 @@ def parse_i_file(path):
 
 
 def default_bin_dirs():
-    """Windows वरील सर्व ड्राइव्ह्समधील $Recycle.Bin फोल्डर्स."""
+    """All $Recycle.Bin\\<SID> folders on the Windows drives of this computer."""
     dirs = []
     for letter in string.ascii_uppercase:
         root = f"{letter}:\\$Recycle.Bin"
@@ -73,7 +73,7 @@ def list_items(bin_dir):
 
 
 def restore(items, outdir):
-    """प्रत्येक आयटमची प्रत मूळ नावाने outdir मध्ये करा. परत: कॉपी केलेले पथ."""
+    """Copy each item into `outdir` under its original name. Returns the new paths."""
     os.makedirs(outdir, exist_ok=True)
     done = []
     for it in items:

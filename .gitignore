@@ -8,7 +8,7 @@ venv/
 .idea/
 .vscode/
 
-# रिकव्हर केलेल्या फाइल्स आणि डिस्क इमेजेस कधीही repo मध्ये टाकू नका
+# Never commit recovered files or disk images
 recovered/
 output/
 *.img

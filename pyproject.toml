@@ -5,13 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "file-rescue"
 version = "0.1.0"
-description = "डिलीट झालेले फोटो, व्हिडिओ, गाणी, APK परत मिळवणारे मोफत ओपन-सोर्स टूल (Windows/Linux/Android)"
+description = "Free, open-source recovery of deleted photos, videos, music and APKs (Windows, Linux, Android)"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Bhushan Savande (Life Style Knowledge Hub)" }]
-keywords = ["data-recovery", "file-carving", "undelete", "android", "marathi"]
+keywords = ["data-recovery", "file-recovery", "file-carving", "undelete", "android", "apk", "marathi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Recovery Tools",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Bhushansavande/file-rescue"
+Issues = "https://github.com/Bhushansavande/file-rescue/issues"
 
 [project.scripts]
 filerescue = "filerescue.cli:main"

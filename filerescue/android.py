@@ -1,8 +1,9 @@
-"""Android: ADB द्वारे फोनमधील ट्रॅश/रिसायकल फोल्डर्समधील फाइल्स काढा.
+"""Android: pull files from the phone's trash/recycle folders over ADB.
 
-Android 11+ मध्ये गॅलरी/Files ॲपमध्ये डिलीट केलेली फाइल प्रथम `.trashed-<वेळ>-<नाव>` या नावाने
-फोनमध्येच (साधारण 30 दिवस) राहते. तिथून ती परत मिळवता येते. यासाठी फोनवर USB debugging चालू
-असावे आणि लॅपटॉपवर `adb` (Android platform-tools, मोफत) इन्स्टॉल असावे.
+On Android 11+, a file deleted from the Gallery or Files app first becomes
+`.trashed-<expiry>-<name>` on the phone itself and stays there for about 30 days.
+It can be pulled from there. This needs USB debugging enabled on the phone and
+`adb` (Android platform-tools, free) installed on the computer.
 """
 
 import os
@@ -13,7 +14,7 @@ from datetime import datetime
 
 TRASHED_RE = re.compile(r"^\.trashed-(\d+)-(.+)$")
 
-# या ठिकाणी शोधा (फोनच्या अंतर्गत स्टोरेजमध्ये, root शिवाय)
+# Look in these places on internal storage (no root needed)
 FIND_CMD = (
     "find /sdcard -type f \\( -name '.trashed-*' -o -ipath '*/.trash/*' "
     "-o -ipath '*/.recycle*/*' -o -ipath '*/.deleted/*' \\) 2>/dev/null"
@@ -21,7 +22,7 @@ FIND_CMD = (
 
 
 def parse_trashed_name(filename):
-    """'.trashed-1735689600-IMG_1.jpg' -> ('IMG_1.jpg', स्वयं-हटवण्याची वेळ)."""
+    """'.trashed-1735689600-IMG_1.jpg' -> ('IMG_1.jpg', auto-delete time)."""
     m = TRASHED_RE.match(filename)
     if not m:
         return filename.lstrip("."), None
@@ -41,16 +42,16 @@ def _adb(*args, timeout=120):
 
 
 def check_device():
-    """(ok, संदेश)"""
+    """Returns (ok, message)."""
     if not adb_path():
-        return False, ("adb सापडले नाही. Android platform-tools डाउनलोड करा "
-                       "(developer.android.com/tools/releases/platform-tools) आणि PATH मध्ये टाका.")
+        return False, ("adb not found. Download Android platform-tools "
+                       "(developer.android.com/tools/releases/platform-tools) and add it to PATH.")
     out = _adb("devices").stdout.strip().splitlines()[1:]
     devices = [l.split()[0] for l in out if l.strip().endswith("device")]
     if not devices:
-        return False, ("फोन सापडला नाही. USB debugging चालू करा, केबल जोडा आणि फोनवर "
-                       "'Allow USB debugging' ला परवानगी द्या.")
-    return True, f"फोन जोडलेला आहे: {devices[0]}"
+        return False, ("No phone found. Enable USB debugging, connect the cable, and tap "
+                       "'Allow USB debugging' on the phone.")
+    return True, f"Phone connected: {devices[0]}"
 
 
 def find_trashed():
@@ -73,7 +74,7 @@ def pull_all(paths, outdir, log=None):
         if r.returncode == 0:
             pulled.append(target)
             if log:
-                log(f"  मिळाले: {os.path.basename(target)}")
+                log(f"  pulled: {os.path.basename(target)}")
         elif log:
-            log(f"  अयशस्वी: {p}")
+            log(f"  failed: {p}")
     return pulled

@@ -1,8 +1,9 @@
-"""File carving - रॉ डिस्क/इमेज/SD कार्डमधून फाइल्स त्यांच्या सिग्नेचरवरून शोधून परत काढणे.
+"""File carving: recover files from a raw disk, image or SD card by their signatures.
 
-फाइल डिलीट केल्यावर फाइलचा डेटा लगेच पुसला जात नाही, फक्त त्याची नोंद (index) काढली जाते.
-हे टूल नोंदीवर अवलंबून न राहता डेटामध्येच फाइलची सुरुवात (header) शोधते आणि फाइलचा शेवट
-मोजून ती वेगळी करते. स्रोत फक्त वाचला जातो (read-only), त्यात काहीही लिहिले जात नाही.
+When a file is deleted its data is usually not erased; only its index entry is removed.
+Instead of relying on that entry, this module looks for the start (header) of known file
+types inside the raw data, measures where each file ends, and copies it out.
+The source is only ever read (read-only); nothing is written to it.
 """
 
 import os
@@ -15,7 +16,7 @@ SECTOR = 512
 CHUNK = 4 * 1024 * 1024
 
 
-# ---------------------------------------------------------------- वाचन मदत
+# ---------------------------------------------------------------- reading helpers
 
 def _read_exact(f, n):
     parts, got = [], 0
@@ -29,7 +30,7 @@ def _read_exact(f, n):
 
 
 def read_at(f, offset, length):
-    """कोणत्याही offset वरून वाचा. रॉ डिव्हाइसला sector-aligned वाचन लागते, ते इथे सांभाळले आहे."""
+    """Read from any offset. Raw devices require sector-aligned I/O; that is handled here."""
     if length <= 0:
         return b""
     start = offset - offset % SECTOR
@@ -40,10 +41,10 @@ def read_at(f, offset, length):
     return data[offset - start: offset - start + length]
 
 
-# ---------------------------------------------------------------- स्कॅन
+# ---------------------------------------------------------------- scanning
 
 def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK):
-    """सर्व संभाव्य फाइल सुरुवाती शोधा. परत: [(offset, Signature), ...] क्रमाने."""
+    """Find all candidate file starts. Returns [(offset, Signature), ...] in order."""
     reach = max(s.header_offset + len(s.header) for s in sigs)
     hits = {}
     pos, carry = 0, b""
@@ -68,10 +69,10 @@ def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK):
     return sorted(hits.items())
 
 
-# ---------------------------------------------------------------- लांबी मोजणे
+# ---------------------------------------------------------------- measuring length
 
 def find_footer(f, off, sig, limit):
-    """पहिला footer सापडेपर्यंत वाचा. परत: footer च्या शेवटापर्यंतची लांबी किंवा None."""
+    """Read until the first footer. Returns the length up to the end of the footer, or None."""
     pos = off + sig.header_offset + len(sig.header)
     carry = b""
     while pos - off < limit:
@@ -89,8 +90,9 @@ def find_footer(f, off, sig, limit):
 
 
 def jpeg_length(f, off, limit):
-    """JPEG चे मार्कर्स एकामागून एक चालून खरा शेवट (FFD9) शोधा.
-    हे थंबनेल्समधील FFD9 मुळे फाइल मध्येच तुटू देत नाही."""
+    """Walk the JPEG markers to find the real end (FFD9).
+
+    This is not fooled by FFD9 bytes inside embedded thumbnails."""
     pos = off + 2
     while pos < off + limit:
         h = read_at(f, pos, 4)
@@ -108,7 +110,7 @@ def jpeg_length(f, off, limit):
         if seglen < 2:
             return None
         pos += 2 + seglen
-        if m == 0xDA:  # स्कॅन डेटा: पुढचा खरा मार्कर येईपर्यंत वगळा
+        if m == 0xDA:  # entropy-coded scan data: skip until the next real marker
             while pos < off + limit:
                 data = read_at(f, pos, CHUNK)
                 if len(data) < 2:
@@ -145,6 +147,7 @@ def zip_length(f, off, limit):
 
 
 def mp4_length(f, off, limit):
+    """Add up the sizes of the top-level MP4 boxes."""
     pos, saw_media = off, False
     while pos - off < limit:
         h = read_at(f, pos, 16)
@@ -172,7 +175,7 @@ _SR = {3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 800
 
 
 def mp3_length(f, off, head, limit):
-    """ID3 टॅग नंतर MPEG Layer III फ्रेम्स चालून गाण्याचा शेवट मोजा."""
+    """After the ID3 tag, walk MPEG Layer III frames to find where the song ends."""
     if head[3] not in (2, 3, 4) or head[5] & 0x0F or any(b >= 0x80 for b in head[6:10]):
         return None
     tag = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
@@ -197,13 +200,15 @@ def mp3_length(f, off, head, limit):
         frames += 1
     if frames < 3:
         return None
-    if read_at(f, pos, 3) == b"TAG":  # ID3v1
+    if read_at(f, pos, 3) == b"TAG":  # ID3v1 trailer
         pos += 128
     return pos - off
 
 
 def measure(f, off, sig, nxt, keep_partial=True):
-    """फाइल खरी वाटते का ते तपासा आणि लांबी मोजा. परत: (length, ext, complete) किंवा None."""
+    """Check that a candidate looks real and measure it.
+
+    Returns (length, ext, complete) or None to reject the candidate."""
     head = read_at(f, off, 64)
     hs = sig.header_offset
     if head[hs:hs + len(sig.header)] != sig.header:
@@ -249,18 +254,18 @@ def measure(f, off, sig, nxt, keep_partial=True):
     elif sig.kind == "mp3":
         length = mp3_length(f, off, head, limit)
         if length is None:
-            return None  # ID3 सारखे 3 बाइट्स फार सामान्य आहेत; खऱ्या गाण्याचीच नोंद घ्या
+            return None  # a bare "ID3" is a very common byte sequence; only keep real songs
 
     if length:
         return length, ext, True
     if not keep_partial:
         return None
-    # शेवट सापडला नाही (अर्धवट/ओव्हरराईट): पुढच्या फाइलपर्यंत किंवा मर्यादेपर्यंत घ्या
+    # no clean end found (partly overwritten): take up to the next candidate or the size limit
     part = min(limit, nxt - off) if nxt else min(limit, CHUNK)
     return (part, ext, False) if part > 0 else None
 
 
-# ---------------------------------------------------------------- बाहेर काढणे
+# ---------------------------------------------------------------- extraction
 
 def copy_range(f, off, length, path):
     with open(path, "wb") as out:
@@ -275,7 +280,7 @@ def copy_range(f, off, length, path):
 
 
 def refine_zip_ext(path):
-    """ZIP मधून APK / DOCX / XLSX / PPTX ओळखा."""
+    """Tell APK / DOCX / XLSX / PPTX apart from a plain ZIP."""
     try:
         with zipfile.ZipFile(path) as z:
             names = z.namelist()
@@ -304,18 +309,18 @@ class Recovered:
 
 def carve(source, outdir, types=None, aligned=True, keep_partial=True,
           progress=None, log=None):
-    """source मधून फाइल्स outdir मध्ये काढा. परत: Recovered ची यादी."""
+    """Carve files out of `source` into `outdir`. Returns a list of Recovered."""
     sigs = select_signatures(types)
     os.makedirs(outdir, exist_ok=True)
     results = []
     with open(source, "rb", buffering=0) as f:
         hits = scan(f, sigs, aligned=aligned, progress=progress)
         if log:
-            log(f"संभाव्य फाइल सुरुवाती सापडल्या: {len(hits)}")
+            log(f"Candidate file starts found: {len(hits)}")
         last_end = -1
         for n, (off, sig) in enumerate(hits):
             if off < last_end:
-                continue  # आधी काढलेल्या फाइलच्या आतला हिट
+                continue  # candidate lies inside a file we already recovered
             nxt = hits[n + 1][0] if n + 1 < len(hits) else None
             m = measure(f, off, sig, nxt, keep_partial)
             if m is None:
@@ -335,8 +340,12 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
                     new_path = os.path.join(new_folder, os.path.basename(path)[:-3] + new_ext)
                     os.replace(path, new_path)
                     path, ext = new_path, new_ext
+                    try:
+                        os.rmdir(folder)  # remove the now-empty "archives" folder
+                    except OSError:
+                        pass  # other files are still in it
             last_end = off + size
             results.append(Recovered(path, off, size, ext, complete))
             if log:
-                log(f"  [{ext}] {size:>12,} बाइट्स  {os.path.relpath(path, outdir)}")
+                log(f"  [{ext}] {size:>12,} bytes  {os.path.relpath(path, outdir)}")
     return results

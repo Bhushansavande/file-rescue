@@ -1,4 +1,4 @@
-"""कृत्रिम डिस्क इमेज बनवून recovery तपासा: python -m unittest discover -s tests"""
+"""Build synthetic disk images and check recovery: python -m unittest discover -s tests"""
 
 import hashlib
 import io
@@ -16,7 +16,8 @@ from filerescue.carver import carve
 
 
 def make_jpeg(rng, size=3000, with_thumb=True):
-    """वैध मार्कर रचना असलेली JPEG; APP1 मध्ये थंबनेलचा FFD9 मुद्दाम ठेवला आहे."""
+    """A JPEG with a valid marker structure; the APP1 segment deliberately contains a
+    thumbnail with its own FFD9 so truncation bugs show up."""
     thumb = b"\xff\xd8\xff\xdb\x00\x04\x00\x00\xff\xd9" if with_thumb else b""
     app1 = b"Exif\x00\x00" + thumb
     scan = bytearray()
@@ -47,7 +48,7 @@ def make_mp4(rng):
 
 
 def make_mp3(rng, frames=40):
-    frame = b"\xff\xfb\x90\x00" + bytes(rng.randrange(256) for _ in range(413))  # 417 बाइट्स
+    frame = b"\xff\xfb\x90\x00" + bytes(rng.randrange(256) for _ in range(413))  # 417 bytes
     return b"ID3\x03\x00\x00\x00\x00\x00\x00" + frame * frames
 
 
@@ -88,7 +89,7 @@ class CarveTest(unittest.TestCase):
             "apk": make_zip("AndroidManifest.xml"),
             "docx": make_zip("[Content_Types].xml") ,
         }
-        # docx साठी word/ आवश्यक
+        # a docx needs a word/ entry
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
             z.writestr("[Content_Types].xml", "<x/>")
@@ -108,8 +109,11 @@ class CarveTest(unittest.TestCase):
                     got.setdefault(r.ext, []).append(sha(fh.read()))
                 self.assertTrue(r.complete, r.path)
             for ext, data in originals.items():
-                self.assertIn(sha(data), got.get(ext, []), f"{ext} परत मिळाली नाही")
+                self.assertIn(sha(data), got.get(ext, []), f"{ext} was not recovered")
             self.assertEqual(len(res), len(order))
+            # no empty leftover folders (e.g. "archives" after APK/DOCX detection)
+            for entry in os.listdir(os.path.join(tmp, "out")):
+                self.assertTrue(os.listdir(os.path.join(tmp, "out", entry)), entry)
 
     def test_jpeg_thumbnail_does_not_truncate(self):
         rng = random.Random(3)
@@ -134,7 +138,7 @@ class CarveTest(unittest.TestCase):
 
     def test_truncated_file_saved_as_partial(self):
         rng = random.Random(9)
-        png = make_png(rng)[:-20]  # शेवट ओव्हरराईट झाला
+        png = make_png(rng)[:-20]  # the end was overwritten
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "d.img")
             with open(src, "wb") as fh:

@@ -1,104 +1,108 @@
-# File Rescue 🛟
+# File Rescue
 
-**डिलीट झालेले फोटो, व्हिडिओ, गाणी आणि APK फाइल्स परत मिळवणारे मोफत, ओपन-सोर्स टूल.**
-लॅपटॉप (Windows/Linux), SD कार्ड, पेन ड्राइव्ह आणि Android फोनसाठी.
+[![CI](https://github.com/Bhushansavande/file-rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/Bhushansavande/file-rescue/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 
-> ⚠️ **सगळ्यात महत्त्वाचे:** फाइल डिलीट झाल्यावर ज्या ड्राइव्हमधून परत मिळवायची आहे त्यावर **काहीही नवीन सेव्ह करू नका**. जितके जास्त वापराल, तितकी जुनी फाइल कायमची पुसली जाण्याची शक्यता जास्त. आधी `docs/SHIKSHAN.md` वाचा.
+**Free, open-source tool to recover deleted photos, videos, music and APK files** from laptops (Windows/Linux), SD cards, USB drives and Android phones.
 
-## हे काय करते?
+🇮🇳 [मराठीत वाचा (Read in Marathi)](README.mr.md)
 
-| सुविधा | कमांड | कुठे उपयोगी |
+> ⚠️ **Most important rule:** once a file is deleted, do **not** save anything new to the drive you want to recover from. Every new write can permanently overwrite the old data. Read [docs/EDUCATION.md](docs/EDUCATION.md) first.
+
+## What it does
+
+| Feature | Command | Best for |
 |---|---|---|
-| **File carving** (डेटावरून फाइल शोधणे) | `filerescue carve` | SD कार्ड, पेन ड्राइव्ह, HDD, डिस्क इमेज |
-| **Recycle Bin रिस्टोअर** (मूळ नावासह) | `filerescue recyclebin` | Windows लॅपटॉप |
-| **Android ट्रॅश फाइल्स** (ADB द्वारे) | `filerescue android` | Android 11+ फोन |
-| **सुरक्षित इमेज प्रत** | `filerescue image` | कोणताही ड्राइव्ह, आधी प्रत मग रिकव्हरी |
+| **File carving** (finds files by their content signatures) | `filerescue carve` | SD cards, USB drives, HDDs, disk images |
+| **Recycle Bin restore** (keeps original file names) | `filerescue recyclebin` | Windows laptops |
+| **Android trash files** (over ADB) | `filerescue android` | Android 11+ phones |
+| **Safe disk image copy** | `filerescue image` | Any drive: image first, recover second |
 
-**समर्थित फाइल प्रकार:** JPG, PNG, GIF, WEBP, MP4, MOV, 3GP, M4A, MP3, WAV, AVI, **APK**, PDF, DOCX, XLSX, PPTX, ZIP.
+**Supported file types:** JPG, PNG, GIF, WEBP, MP4, MOV, 3GP, M4A, MP3, WAV, AVI, **APK**, PDF, DOCX, XLSX, PPTX, ZIP.
 
-सर्व काही **फक्त वाचन (read-only)** पद्धतीने चालते: स्रोत ड्राइव्हमध्ये काहीही लिहिले जात नाही. बाहेरील कोणत्याही लायब्ररीची गरज नाही (फक्त Python 3.8+).
+Everything runs **read-only**: the source drive is never written to. No third-party dependencies, only Python 3.9+.
 
-## इन्स्टॉल
+## Install
 
 ```bash
-git clone https://github.com/<तुमचे-युजरनेम>/file-rescue.git
+git clone https://github.com/Bhushansavande/file-rescue.git
 cd file-rescue
 pip install .
 ```
 
-इन्स्टॉल न करताही चालते: `python -m filerescue ...`
+You can also run it without installing: `python -m filerescue ...`
 
-## वापर
+## Usage
 
-### 1) SD कार्ड / पेन ड्राइव्ह / डिस्कमधून (सगळ्यात प्रभावी)
+### 1) SD card / USB drive / disk (most effective)
 
-आउटपुट फोल्डर **वेगळ्या ड्राइव्हवर** असावा.
+Always write the output to a **different drive** than the one you are recovering from.
 
 ```bash
-# Windows (Administrator म्हणून Command Prompt उघडा; E: हा कार्ड ड्राइव्ह)
+# Windows (open Command Prompt as Administrator; E: is the card)
 filerescue carve \\.\E: -o D:\recovered --types photos,videos
 
 # Linux
 sudo filerescue carve /dev/sdb1 -o ~/recovered --types jpg,mp3,apk
 
-# डिस्क इमेज फाइलवर
+# A disk image file
 filerescue carve disk.img -o recovered
 ```
 
-आधी सुरक्षित प्रत बनवणे उत्तम (खराब होत असलेल्या कार्डसाठी तर खूपच):
+For a failing card or drive, make an image first and work on the image:
 
 ```bash
 filerescue image \\.\E: D:\sdcard.img
 filerescue carve D:\sdcard.img -o D:\recovered
 ```
 
-`--types` उदाहरणे: `jpg,png` · `photos` · `videos` · `music` · `apps` (APK) · `documents`
+`--types` examples: `jpg,png` · `photos` · `videos` · `music` · `apps` (APK) · `documents`
 
-आउटपुट असे फोल्डर्समध्ये लावले जाते: `photos/ videos/ music/ apps/ documents/ archives/`.
-`_partial` असलेल्या फाइल्स अर्धवट असू शकतात (शेवटचा भाग ओव्हरराईट झालेला).
+Recovered files are sorted into `photos/ videos/ music/ apps/ documents/ archives/`.
+Files ending in `_partial` may be incomplete (their end was overwritten).
 
 ### 2) Windows Recycle Bin
 
 ```bash
-filerescue recyclebin                  # यादी: मूळ पथ, आकार, डिलीट वेळ
-filerescue recyclebin -o D:\restored   # मूळ नावासह कॉपी
+filerescue recyclebin                  # list: original path, size, deletion time
+filerescue recyclebin -o D:\restored   # copy out with original names
 ```
 
-### 3) Android फोन
+### 3) Android phone
 
-1. फोनमध्ये **Developer options → USB debugging** चालू करा.
-2. लॅपटॉपवर [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) (मोफत) डाउनलोड करून `adb` PATH मध्ये टाका.
-3. फोन USB ने जोडा, फोनवर परवानगी द्या, मग:
+1. On the phone enable **Developer options → USB debugging**.
+2. On the computer download [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) (free) and put `adb` on your PATH.
+3. Connect the phone with USB and accept the prompt on the phone, then:
 
 ```bash
-filerescue android                  # ट्रॅश फाइल्सची यादी
-filerescue android -o D:\phone-trash
+filerescue android                    # list trashed files
+filerescue android -o D:\phone-trash  # pull them
 ```
 
-> फोनची **अंतर्गत स्टोरेज** (एन्क्रिप्टेड असते) थेट carve करता येत नाही. त्यासाठी `docs/SHIKSHAN.md` मधील Android भाग वाचा. **फोनचा SD कार्ड** मात्र कार्ड रीडरने जोडून पद्धत 1 ने स्कॅन करता येतो.
+> A phone's **internal storage** is encrypted and cannot be carved directly. See [docs/EDUCATION.md](docs/EDUCATION.md) for what does work on Android. A phone's **SD card** can be scanned with method 1 using a card reader.
 
-## मर्यादा (प्रामाणिकपणे)
+## Limitations (honest ones)
 
-- **SSD आणि नवीन फोन** TRIM मुळे डिलीट डेटा पटकन खरोखर पुसतात; तिथे carving बहुतेक वेळा काम करत नाही.
-- Carving फाइलचे **नाव आणि फोल्डर** परत देऊ शकत नाही (ती माहिती डिलीटसोबत जाते), फक्त आशय मिळतो.
-- **तुकड्या-तुकड्यात (fragmented)** साठवलेल्या मोठ्या फाइल्स अर्धवट/खराब मिळू शकतात.
-- MP3 फक्त `ID3` टॅग असलेली गाणी ओळखते.
-- हे एक सुरुवातीचे (v0.1) टूल आहे. गंभीर/महत्त्वाच्या डेटासाठी **PhotoRec/TestDisk** (मोफत, ओपन-सोर्स) सुद्धा वापरून पाहा.
+- **SSDs and modern phones** use TRIM, which really erases deleted data quickly; carving usually cannot help there.
+- Carving cannot restore a file's **name or folder** (that information is lost on delete); you get the content only.
+- Large files stored in **fragments** may come back incomplete or damaged.
+- MP3 detection currently covers songs that start with an `ID3` tag.
+- This is an early (v0.1) tool. For critical data also try **PhotoRec/TestDisk** (free, open source).
 
-## टेस्ट्स
+## Development
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## योगदान
+The tests build synthetic disk images and check that recovered files match the originals byte for byte.
 
-सुधारणा, नवीन फाइल प्रकार आणि भाषांतर यांचे स्वागत आहे: `CONTRIBUTING.md` पहा.
-पुढील योजना: `docs/YOJANA.md`.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned and [CONTRIBUTING.md](CONTRIBUTING.md) to help.
 
-## परवाना
+## Legal
 
-MIT: मोफत वापरा, बदला, शेअर करा. तुमच्या स्वतःच्या किंवा परवानगी असलेल्या डिव्हाइसवरच वापरा.
+MIT licensed. Use this only on devices you own or have explicit permission to examine; recovering someone else's data without consent may be illegal. Recovered files can contain private information, so keep them safe and never commit them to a repository.
 
 ---
-**Life Style Knowledge Hub (LSKH)** · Bhushan Savande
+Made by **Bhushan Savande** · Life Style Knowledge Hub (LSKH)

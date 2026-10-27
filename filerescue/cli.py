@@ -1,4 +1,4 @@
-"""कमांड लाइन इंटरफेस."""
+"""Command line interface."""
 
 import argparse
 import os
@@ -16,7 +16,7 @@ def cmd_carve(a):
     from .carver import carve
 
     if not os.path.exists(a.source):
-        _out(f"स्रोत सापडला नाही: {a.source}")
+        _out(f"Source not found: {a.source}")
         return 2
     total = os.path.getsize(a.source) if os.path.isfile(a.source) else 0
     last = {"mb": -1}
@@ -26,25 +26,30 @@ def cmd_carve(a):
         if mb != last["mb"]:
             last["mb"] = mb
             if total:
-                print(f"\r  स्कॅन: {pos * 100 // total}%", end="", file=sys.stderr, flush=True)
+                print(f"\r  scanning: {pos * 100 // total}%", end="", file=sys.stderr, flush=True)
             else:
-                print(f"\r  स्कॅन: {pos // (1024 * 1024):,} MB", end="", file=sys.stderr, flush=True)
+                print(f"\r  scanning: {pos // (1024 * 1024):,} MB", end="", file=sys.stderr, flush=True)
 
     types = a.types.split(",") if a.types else None
-    _out(f"स्कॅन सुरू: {a.source}  (फक्त वाचन, स्रोतमध्ये काहीही बदलले जात नाही)")
-    res = carve(a.source, a.output, types=types, aligned=not a.no_align,
-                keep_partial=not a.no_partial, progress=progress, log=_out)
+    _out(f"Scanning {a.source} (read-only; the source is never modified)")
+    try:
+        res = carve(a.source, a.output, types=types, aligned=not a.no_align,
+                    keep_partial=not a.no_partial, progress=progress, log=_out)
+    except ValueError as e:
+        print(file=sys.stderr)
+        _out(str(e))
+        return 2
     print(file=sys.stderr)
     full = sum(1 for r in res if r.complete)
-    _out(f"\nपूर्ण: {full} फाइल्स, अर्धवट: {len(res) - full} फाइल्स -> {os.path.abspath(a.output)}")
+    _out(f"\nDone: {full} complete, {len(res) - full} partial -> {os.path.abspath(a.output)}")
     return 0
 
 
 def cmd_types(_a):
-    _out("समर्थित प्रकार:")
+    _out("Supported types:")
     for s in SIGNATURES:
         _out(f"  {s.name}")
-    _out("\n--types उदाहरणे: jpg,png | photos | videos | music | apk | documents")
+    _out("\nExamples for --types: jpg,png | photos | videos | music | apps | documents")
     return 0
 
 
@@ -53,22 +58,22 @@ def cmd_recyclebin(a):
 
     dirs = [a.path] if a.path else rb.default_bin_dirs()
     if not dirs:
-        _out("Recycle Bin फोल्डर सापडला नाही (हे फीचर Windows साठी आहे; किंवा --path द्या).")
+        _out("No Recycle Bin folder found (this feature is for Windows; or pass --path).")
         return 1
     items = []
     for d in dirs:
         items.extend(rb.list_items(d))
     if not items:
-        _out("Recycle Bin मध्ये काहीही नाही.")
+        _out("The Recycle Bin is empty.")
         return 0
     for it in items:
-        status = "" if it.data_path else "  (डेटा नाही)"
+        status = "" if it.data_path else "  (data missing)"
         _out(f"{it.deleted_at:%Y-%m-%d %H:%M}  {it.size:>12,}  {it.original_path}{status}")
     if a.output:
         done = rb.restore(items, a.output)
-        _out(f"\n{len(done)} आयटम्स कॉपी केले -> {os.path.abspath(a.output)}")
+        _out(f"\nCopied {len(done)} items -> {os.path.abspath(a.output)}")
     else:
-        _out("\nपरत मिळवण्यासाठी -o <फोल्डर> जोडा.")
+        _out("\nAdd -o <folder> to copy them out.")
     return 0
 
 
@@ -81,22 +86,22 @@ def cmd_android(a):
         return 1
     paths = android.find_trashed()
     if not paths:
-        _out("फोनमध्ये ट्रॅश फाइल्स सापडल्या नाहीत.")
+        _out("No trashed files found on the phone.")
         return 0
     for p in paths:
         name, exp = android.parse_trashed_name(os.path.basename(p))
-        extra = f"  (आपोआप हटेल: {exp:%Y-%m-%d})" if exp else ""
+        extra = f"  (auto-deletes: {exp:%Y-%m-%d})" if exp else ""
         _out(f"  {name}{extra}")
     if a.output:
         pulled = android.pull_all(paths, a.output, log=_out)
-        _out(f"\n{len(pulled)} फाइल्स काढल्या -> {os.path.abspath(a.output)}")
+        _out(f"\nPulled {len(pulled)} files -> {os.path.abspath(a.output)}")
     else:
-        _out("\nकाढण्यासाठी -o <फोल्डर> जोडा.")
+        _out("\nAdd -o <folder> to pull them.")
     return 0
 
 
 def cmd_image(a):
-    """रॉ डिव्हाइसची सुरक्षित प्रत (इमेज) बनवा; वाचता न येणारे भाग शून्याने भरा."""
+    """Make a safe copy (image) of a raw device; unreadable parts are zero-filled."""
     chunk = 1024 * 1024
     done = 0
     with open(a.source, "rb", buffering=0) as src, open(a.dest, "wb") as dst:
@@ -110,40 +115,44 @@ def cmd_image(a):
                 break
             dst.write(data)
             done += len(data)
-            print(f"\r  कॉपी: {done // (1024 * 1024):,} MB", end="", file=sys.stderr, flush=True)
+            print(f"\r  copied: {done // (1024 * 1024):,} MB", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
-    _out(f"इमेज तयार: {a.dest} ({done:,} बाइट्स)")
+    _out(f"Image created: {a.dest} ({done:,} bytes)")
     return 0
 
 
 def build_parser():
     p = argparse.ArgumentParser(
         prog="filerescue",
-        description="File Rescue - डिलीट झालेले फोटो, व्हिडिओ, गाणी, APK परत मिळवा (मोफत, ओपन-सोर्स)")
+        description="File Rescue: recover deleted photos, videos, music and APKs "
+                    "(free and open source)")
     p.add_argument("--version", action="version", version=f"filerescue {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    c = sub.add_parser("carve", help="डिस्क/SD कार्ड/इमेजमधून फाइल्स शोधून काढा")
-    c.add_argument("source", help=r"फाइल, इमेज किंवा डिव्हाइस (उदा. E:\ साठी \\.\E: , Linux: /dev/sdb1)")
-    c.add_argument("-o", "--output", required=True, help="वेगळ्या ड्राइव्हवरील आउटपुट फोल्डर")
-    c.add_argument("--types", help="उदा. jpg,png,mp3 किंवा photos,videos,music,apps")
-    c.add_argument("--no-align", action="store_true", help="फाइल्स sector सीमेवर नसल्या तरी शोधा (हळू, जास्त चुकीचे हिट्स)")
-    c.add_argument("--no-partial", action="store_true", help="अर्धवट फाइल्स सोडून द्या")
+    c = sub.add_parser("carve", help="find and extract files from a disk, SD card or image")
+    c.add_argument("source", help=r"file, image or device (Windows: \\.\E:  Linux: /dev/sdb1)")
+    c.add_argument("-o", "--output", required=True,
+                   help="output folder (use a different drive than the source)")
+    c.add_argument("--types", help="e.g. jpg,png,mp3 or photos,videos,music,apps")
+    c.add_argument("--no-align", action="store_true",
+                   help="also look for files that do not start on a sector boundary "
+                        "(slower, more false hits)")
+    c.add_argument("--no-partial", action="store_true", help="skip partially recovered files")
     c.set_defaults(fn=cmd_carve)
 
-    t = sub.add_parser("types", help="समर्थित फाइल प्रकार दाखवा")
+    t = sub.add_parser("types", help="list supported file types")
     t.set_defaults(fn=cmd_types)
 
-    r = sub.add_parser("recyclebin", help="Windows Recycle Bin मधील फाइल्स यादी/परत मिळवा")
-    r.add_argument("--path", help="विशिष्ट $Recycle.Bin\\<SID> फोल्डर")
-    r.add_argument("-o", "--output", help="येथे कॉपी करा")
+    r = sub.add_parser("recyclebin", help="list or restore files from the Windows Recycle Bin")
+    r.add_argument("--path", help="a specific $Recycle.Bin\\<SID> folder")
+    r.add_argument("-o", "--output", help="copy items here")
     r.set_defaults(fn=cmd_recyclebin)
 
-    a = sub.add_parser("android", help="Android फोनमधील ट्रॅश फाइल्स (ADB द्वारे)")
-    a.add_argument("-o", "--output", help="येथे काढा")
+    a = sub.add_parser("android", help="pull trashed files from an Android phone (over ADB)")
+    a.add_argument("-o", "--output", help="pull files here")
     a.set_defaults(fn=cmd_android)
 
-    i = sub.add_parser("image", help="डिव्हाइसची सुरक्षित इमेज प्रत बनवा")
+    i = sub.add_parser("image", help="create a safe image copy of a device")
     i.add_argument("source")
     i.add_argument("dest")
     i.set_defaults(fn=cmd_image)
@@ -158,10 +167,10 @@ def main(argv=None):
     try:
         return args.fn(args)
     except PermissionError:
-        _out("परवानगी नाही. रॉ डिव्हाइस वाचण्यासाठी Administrator (Windows) / sudo (Linux) लागते.")
+        _out("Permission denied. Reading a raw device needs Administrator (Windows) or sudo (Linux).")
         return 13
     except KeyboardInterrupt:
-        _out("\nथांबवले.")
+        _out("\nStopped.")
         return 130
 
 

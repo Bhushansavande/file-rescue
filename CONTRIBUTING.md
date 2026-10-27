@@ -1,23 +1,27 @@
-# योगदान कसे करावे
+# Contributing
 
-स्वागत आहे! नवशिक्यांचेही.
+Contributions are welcome, including from beginners.
 
-## सोपी सुरुवात
+## Quick start
 
-1. Repo **Fork** करा, मग clone करा.
-2. `python -m unittest discover -s tests` चालवून सगळ्या टेस्ट्स पास होतात का ते पाहा.
-3. बदल करा, टेस्ट जोडा, **Pull Request** पाठवा.
+1. **Fork** the repo and clone your fork.
+2. Run `python -m unittest discover -s tests -v` and make sure everything passes.
+3. Make your change, add a test, and open a **Pull Request**.
 
-## नवीन फाइल प्रकार जोडायचा असल्यास
+## Adding a new file type
 
-1. `filerescue/signatures.py` मध्ये `Signature(...)` जोडा.
-2. `filerescue/carver.py` मधील `measure()` मध्ये त्याची लांबी मोजण्याची पद्धत जोडा (शक्य तितके खरे validator, खोटे हिट्स टाळण्यासाठी).
-3. `tests/test_filerescue.py` मध्ये कृत्रिम फाइल बनवून **अचूक hash जुळतो** अशी टेस्ट लिहा.
-4. `README.md` मधील प्रकारांची यादी अपडेट करा.
+1. Add a `Signature(...)` in `filerescue/signatures.py`.
+2. Add a way to measure its length in `measure()` in `filerescue/carver.py`. Use real validation to avoid false hits.
+3. Add a test in `tests/test_filerescue.py` that builds a synthetic file and checks that the **recovered hash matches exactly**.
+4. Update the supported-types list in `README.md`.
 
-## नियम
+## Rules
 
-- स्रोत डिव्हाइसवर **कधीही लिहू नका** (read-only).
-- बाहेरील लायब्ररी टाळा (शक्य असल्यास).
-- खरे वैयक्तिक फोटो/फाइल्स टेस्ट डेटा म्हणून टाकू नका; कृत्रिम डेटा वापरा.
-- कोड-कमेंट्स आणि संदेश मराठी किंवा इंग्रजी, दोन्ही चालतील.
+- **Never write to the source device** (read-only).
+- Avoid third-party dependencies where possible.
+- Do not add real personal photos or files as test data; use synthetic data.
+- Keep code comments and messages in English so everyone can follow. Translations of the docs are welcome (see `README.mr.md` for the Marathi example).
+
+## Reporting bugs
+
+Open an issue and include your OS, Python version, the command you ran, and the output. Never attach private recovered files.

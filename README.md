@@ -21,6 +21,35 @@
 
 Everything runs **read-only**: the source drive is never written to. No third-party dependencies, only Python 3.9+.
 
+## Why File Rescue?
+
+Excellent recovery tools already exist. PhotoRec/TestDisk is the gold standard for carving, supports far more formats and is the right choice for critical data. File Rescue aims at something different:
+
+- **Small and readable:** a few hundred lines of dependency-free Python you can read, learn from and extend.
+- **The three common cases in one tool:** Windows Recycle Bin restore with original names, Android trash (`.trashed-*`) over ADB, and carving for SD cards, USB drives and disk images.
+- **Honest about limits:** partial files are flagged, and the docs explain TRIM, encryption and fragmentation instead of promising miracles.
+- **Tested against real file systems:** real media on FAT32 and ext4 images, in CI on every push.
+
+## Example
+
+```text
+$ filerescue carve sdcard.img -o recovered --types photos,music,apps
+Scanning sdcard.img (read-only; the source is never modified)
+Candidate file starts found: 24
+  [gif]       74,049 bytes  photos/00001_0x85000.gif
+  [apk]      342,668 bytes  apps/00002_0x98000.apk
+  [png]       33,865 bytes  photos/00003_0x26a000.png
+  [jpg]    2,722,807 bytes  photos/00004_0x273000.jpg
+  [jpg]      449,423 bytes  photos/00005_0x50c000.jpg
+  [jpg]       66,855 bytes  photos/00006_0x57a000.jpg
+  [jpg]    1,745,125 bytes  photos/00007_0x58b000.jpg
+  ...
+  [wav]      441,078 bytes  music/00015_0x909000.wav
+  [m4a]       71,755 bytes  music/00016_0x975000.m4a
+
+Done: 16 complete, 0 partial -> recovered
+```
+
 ## Install
 
 ```bash
@@ -57,7 +86,7 @@ filerescue image \\.\E: D:\sdcard.img
 filerescue carve D:\sdcard.img -o D:\recovered
 ```
 
-`--types` examples: `jpg,png` · `photos` · `videos` · `music` · `apps` (APK) · `documents`
+`--types` examples: `jpg,png` · `photos` · `videos` · `music` · `apps` (APK) · `documents`. Only the kinds you ask for are kept: `music` returns MP3, M4A and WAV, `videos` returns MP4, MOV, 3GP and AVI. `filerescue types` lists all formats.
 
 Recovered files are sorted into `photos/ videos/ music/ apps/ documents/ archives/`.
 Files ending in `_partial` may be incomplete (their end was overwritten).
@@ -103,6 +132,10 @@ The unit tests build synthetic disk images and check that recovered files match 
 `python scripts/realworld_test.py` goes further (Linux; needs `ffmpeg`, `mtools`, `dosfstools`, `e2fsprogs`, `pillow`): it generates real JPEG, PNG, GIF, WEBP, MP4, MOV, 3GP, AVI, MP3, M4A, WAV, PDF, DOCX, XLSX, APK and ZIP files, puts them on real FAT32 and ext4 images, deletes them and checks that every file is recovered exactly. CI runs it on every push. It has **not** yet been tested on physical SD cards or phones, so reports from real hardware are very welcome.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned and [CONTRIBUTING.md](CONTRIBUTING.md) to help.
+
+## Support
+
+If File Rescue helped you get something back, a ⭐ on the repository helps other people find it. Bug reports with the exact command and output are just as valuable.
 
 ## Legal
 

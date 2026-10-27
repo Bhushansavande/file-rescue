@@ -47,25 +47,48 @@ EXT_CATEGORY = {
 }
 
 
-def select_signatures(types):
-    """types: ['jpg', 'png', 'mp3', 'apk', ...] or None for everything."""
+# What each --types name means: the final file extensions that are kept.
+TYPE_EXTS = {
+    "jpg": {"jpg"}, "jpeg": {"jpg"}, "png": {"png"}, "gif": {"gif"}, "webp": {"webp"},
+    "wav": {"wav"}, "avi": {"avi"}, "mp3": {"mp3"},
+    "mp4": {"mp4"}, "mov": {"mov"}, "3gp": {"3gp"}, "m4a": {"m4a"},
+    "pdf": {"pdf"}, "zip": {"zip"}, "apk": {"apk"},
+    "docx": {"docx"}, "xlsx": {"xlsx"}, "pptx": {"pptx"},
+    "photos": {"jpg", "png", "gif", "webp"},
+    "videos": {"mp4", "mov", "3gp", "avi"},
+    "music": {"mp3", "m4a", "wav"},
+    "apps": {"apk"},
+    "documents": {"pdf", "docx", "xlsx", "pptx"},
+}
+
+# Which signature (container format) has to be scanned for each final extension.
+EXT_SIGNATURE = {
+    "jpg": "jpg", "png": "png", "gif": "gif", "mp3": "mp3", "pdf": "pdf",
+    "webp": "riff", "wav": "riff", "avi": "riff",
+    "mp4": "mp4", "mov": "mp4", "3gp": "mp4", "m4a": "mp4",
+    "zip": "zip", "apk": "zip", "docx": "zip", "xlsx": "zip", "pptx": "zip",
+}
+
+
+def allowed_extensions(types):
+    """Final extensions to keep for the given --types names, or None for everything."""
     if not types:
-        return list(SIGNATURES)
-    wanted = {t.strip().lower().lstrip(".") for t in types if t.strip()}
-    mapping = {
-        "jpg": ["jpg"], "jpeg": ["jpg"], "png": ["png"], "gif": ["gif"],
-        "webp": ["riff"], "wav": ["riff"], "avi": ["riff"],
-        "mp3": ["mp3"],
-        "mp4": ["mp4"], "mov": ["mp4"], "3gp": ["mp4"], "m4a": ["mp4"],
-        "pdf": ["pdf"],
-        "zip": ["zip"], "apk": ["zip"], "docx": ["zip"], "xlsx": ["zip"], "pptx": ["zip"],
-        "photos": ["jpg", "png", "gif", "riff"], "videos": ["mp4", "riff"],
-        "music": ["mp3", "mp4", "riff"], "apps": ["zip"],
-        "documents": ["pdf", "zip"],
-    }
+        return None
     exts = set()
-    for t in wanted:
-        if t not in mapping:
+    for t in types:
+        t = t.strip().lower().lstrip(".")
+        if not t:
+            continue
+        if t not in TYPE_EXTS:
             raise ValueError(f"Unknown type: {t}")
-        exts.update(mapping[t])
-    return [s for s in SIGNATURES if s.ext in exts]
+        exts.update(TYPE_EXTS[t])
+    return exts or None
+
+
+def select_signatures(types):
+    """Signatures to scan for. types: ['jpg', 'music', 'apk', ...] or None for everything."""
+    allowed = allowed_extensions(types)
+    if allowed is None:
+        return list(SIGNATURES)
+    needed = {EXT_SIGNATURE[e] for e in allowed}
+    return [s for s in SIGNATURES if s.ext in needed]

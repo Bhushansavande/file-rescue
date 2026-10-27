@@ -12,6 +12,7 @@ All notable changes to this project are documented here.
 - MP4: unknown trailing data could extend a recovered video; only known box types are accepted.
 - Files cut off by the end of the source are now reported as partial instead of complete.
 - Partial files from false hits are capped (64 MB) so they cannot fill the disk.
+- `--types` now keeps only the requested kinds (`music` no longer returns videos that share the MP4 container).
 - No empty `archives` folder is left behind after APK/DOCX detection.
 
 ### Added
@@ -21,4 +22,4 @@ All notable changes to this project are documented here.
 - `image` command for safe raw device copies.
 - English documentation and an education guide.
 - Unit tests, real-media tests on FAT32/ext4 images, and GitHub Actions CI.
-- Release workflow that builds the wheel, source package and a Windows `.exe`.
+- Release workflow that builds the wheel, source package and a Windows `.exe`, with SHA-256 checksums.

@@ -10,7 +10,8 @@ import os
 import zipfile
 from dataclasses import dataclass
 
-from .signatures import EXT_CATEGORY, RIFF_TYPES, SIGNATURES, select_signatures
+from .signatures import (EXT_CATEGORY, RIFF_TYPES, SIGNATURES, allowed_extensions,
+                         select_signatures)
 
 SECTOR = 512
 CHUNK = 4 * 1024 * 1024
@@ -440,6 +441,7 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
           progress=None, log=None):
     """Carve files out of `source` into `outdir`. Returns a list of Recovered."""
     sigs = select_signatures(types)
+    allowed = allowed_extensions(types)   # None = keep every type
     os.makedirs(outdir, exist_ok=True)
     results = []
     with open(source, "rb", buffering=0) as f:
@@ -455,6 +457,9 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
             if m is None:
                 continue
             length, ext, complete = m
+            if allowed is not None and sig.kind != "zip" and ext not in allowed:
+                last_end = off + length   # a real file of a type that was not asked for
+                continue
             category = EXT_CATEGORY.get(ext, "other")
             folder = os.path.join(outdir, category)
             os.makedirs(folder, exist_ok=True)
@@ -479,6 +484,14 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
                         os.rmdir(folder)  # remove the now-empty "archives" folder
                     except OSError:
                         pass  # other files are still in it
+            if allowed is not None and ext not in allowed:
+                os.remove(path)           # e.g. an APK when only documents were requested
+                try:
+                    os.rmdir(os.path.dirname(path))   # drop the folder if it is now empty
+                except OSError:
+                    pass
+                last_end = off + size
+                continue
             last_end = off + size
             results.append(Recovered(path, off, size, ext, complete))
             if log:

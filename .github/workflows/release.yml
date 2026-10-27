@@ -72,13 +72,22 @@ jobs:
           dist\filerescue.exe types
           Move-Item dist\filerescue.exe dist\filerescue-windows-x64.exe
 
+      - name: Create checksums
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          Get-ChildItem dist -File | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+          Move-Item SHA256SUMS.txt dist\SHA256SUMS.txt
+
       - name: Publish release
         if: steps.tag.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.tag.outputs.tag }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe `
+          gh release create "${{ steps.tag.outputs.tag }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe dist/SHA256SUMS.txt `
             --target "${{ github.sha }}" `
             --title "File Rescue ${{ steps.tag.outputs.tag }}" `
             --generate-notes `
-            --notes "Standalone Windows build: **filerescue-windows-x64.exe** (no Python needed; unsigned, so Windows SmartScreen may show a warning). Run it from an Administrator Command Prompt to read raw drives. See the README for usage."
+            --notes "Standalone Windows build: **filerescue-windows-x64.exe** (no Python needed; unsigned, so Windows SmartScreen may show a warning). Run it from an Administrator Command Prompt to read raw drives. Check downloads against SHA256SUMS.txt. See the README for usage."

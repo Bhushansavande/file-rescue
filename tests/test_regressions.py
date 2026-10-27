@@ -185,6 +185,52 @@ class TruncationAndLimits(CarveBase):
         self.assertEqual(os.listdir(out), ["apps"])
 
 
+class TypeFilter(CarveBase):
+    """--types must return only what was asked for, even when kinds share a container format."""
+
+    def setUp(self):
+        super().setUp()
+        self.files = {
+            "png": make_png(self.rng),
+            "mp3": make_mp3(self.rng),
+            "mp4": make_mp4(self.rng),
+            "apk": zip_bytes({"AndroidManifest.xml": b"m", "classes.dex": b"d" * 100}),
+            "docx": zip_bytes({"[Content_Types].xml": b"<t/>", "word/document.xml": b"<w/>"}),
+        }
+        self.img = b"".join(self.image(d) for d in self.files.values())
+
+    def exts(self, *types):
+        return sorted(r.ext for r in self.carve_bytes(self.img, types=list(types)))
+
+    def test_everything_without_a_filter(self):
+        self.assertEqual(sorted(r.ext for r in self.carve_bytes(self.img)),
+                         ["apk", "docx", "mp3", "mp4", "png"])
+
+    def test_groups_return_only_their_own_kinds(self):
+        self.assertEqual(self.exts("photos"), ["png"])
+        self.assertEqual(self.exts("music"), ["mp3"])      # the MP4 shares M4A's container
+        self.assertEqual(self.exts("videos"), ["mp4"])
+        self.assertEqual(self.exts("apps"), ["apk"])
+        self.assertEqual(self.exts("documents"), ["docx"])
+
+    def test_single_types_and_combinations(self):
+        self.assertEqual(self.exts("apk"), ["apk"])
+        self.assertEqual(self.exts("docx"), ["docx"])
+        self.assertEqual(self.exts("mp4"), ["mp4"])
+        self.assertEqual(self.exts("png", "music"), ["mp3", "png"])
+
+    def test_unwanted_files_leave_nothing_behind(self):
+        self.carve_bytes(self.img, types=["apps"])
+        out = os.path.join(self.tmp, "out")
+        left = [os.path.join(d, f) for d, _, fs in os.walk(out) for f in fs]
+        self.assertEqual([os.path.basename(p).rsplit(".", 1)[1] for p in left], ["apk"])
+        self.assertEqual(os.listdir(out), ["apps"])
+
+    def test_unknown_type_is_an_error(self):
+        with self.assertRaises(ValueError):
+            self.carve_bytes(self.img, types=["bogus"])
+
+
 class CommandLine(CarveBase):
     def run_cli(self, *args):
         buf = io.StringIO()

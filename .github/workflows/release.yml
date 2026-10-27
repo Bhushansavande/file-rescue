@@ -67,8 +67,9 @@ jobs:
       - name: Build standalone Windows executable
         if: steps.tag.outputs.exists == 'false'
         run: |
-          pyinstaller --onefile --name filerescue scripts/launcher.py
+          pyinstaller --onefile --name filerescue --paths . scripts/launcher.py
           dist\filerescue.exe --version
+          dist\filerescue.exe types
           Move-Item dist\filerescue.exe dist\filerescue-windows-x64.exe
 
       - name: Publish release

@@ -22,6 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from filerescue.carver import carve  # noqa: E402
 
 
+# mkfs.*, mke2fs and debugfs live in sbin directories that normal users often lack in PATH
+os.environ["PATH"] += os.pathsep + os.pathsep.join(["/usr/sbin", "/sbin"])
+
+
 def need(tool):
     if not shutil.which(tool):
         sys.exit(f"Missing tool: {tool}")

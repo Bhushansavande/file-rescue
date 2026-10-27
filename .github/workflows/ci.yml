@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +31,7 @@ jobs:
   real-media:
     name: real media on FAT32 and ext4 images
     runs-on: ubuntu-22.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,7 +40,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg mtools dosfstools e2fsprogs
+          sudo apt-get install -y --no-install-recommends ffmpeg mtools dosfstools e2fsprogs
           python -m pip install pillow
       - name: Recover real files from real file systems
         run: python scripts/realworld_test.py

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Bhushan Savande (Life Style Knowledge Hub)" }]
-keywords = ["data-recovery", "file-recovery", "file-carving", "undelete", "android", "apk", "marathi"]
+keywords = ["data-recovery", "file-recovery", "file-carving", "undelete", "android", "apk"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",

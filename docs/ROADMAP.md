@@ -11,7 +11,7 @@ Help anyone recover deleted photos, videos, music and APKs using **free and open
 - [x] Windows Recycle Bin restore (original names)
 - [x] Android `.trashed-*` / trash files over ADB
 - [x] Safe image copy (`image`)
-- [x] English and Marathi docs
+- [x] English documentation
 - [x] Automated tests and CI (Linux, Windows, macOS)
 
 ## v0.2: usability
@@ -20,7 +20,7 @@ Help anyone recover deleted photos, videos, music and APKs using **free and open
 - [ ] Thumbnail preview, save only selected files
 - [ ] Automatic drive listing (Windows/Linux)
 - [ ] Progress, time estimate, pause/resume
-- [ ] Language switch (English / Marathi)
+- [ ] Translatable interface (multi-language support)
 
 ## v0.3: more file types
 

@@ -20,7 +20,7 @@ Contributions are welcome, including from beginners.
 - **Never write to the source device** (read-only).
 - Avoid third-party dependencies where possible.
 - Do not add real personal photos or files as test data; use synthetic data.
-- Keep code comments and messages in English so everyone can follow. Translations of the docs are welcome (see `README.mr.md` for the Marathi example).
+- Keep code comments, messages and docs in English so everyone can follow.
 
 ## Reporting bugs
 

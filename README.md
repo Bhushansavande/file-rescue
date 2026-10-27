@@ -6,8 +6,6 @@
 
 **Free, open-source tool to recover deleted photos, videos, music and APK files** from laptops (Windows/Linux), SD cards, USB drives and Android phones.
 
-🇮🇳 [मराठीत वाचा (Read in Marathi)](README.mr.md)
-
 > ⚠️ **Most important rule:** once a file is deleted, do **not** save anything new to the drive you want to recover from. Every new write can permanently overwrite the old data. Read [docs/EDUCATION.md](docs/EDUCATION.md) first.
 
 ## What it does

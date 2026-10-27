@@ -9,5 +9,5 @@ All notable changes to this project are documented here.
 - Windows Recycle Bin listing and restore with original names.
 - Android trash (`.trashed-*`) extraction over ADB.
 - `image` command for safe raw device copies.
-- English documentation, Marathi README and education guide.
+- English documentation and an education guide.
 - Unit tests and GitHub Actions CI.

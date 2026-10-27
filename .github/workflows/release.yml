@@ -1,12 +1,26 @@
 name: Release
 
-# Pushing a tag like v0.1.0 builds the packages and a Windows .exe and publishes a GitHub Release.
+# Builds the wheel, source package and a Windows .exe and publishes a GitHub Release.
+# It runs when:
+#   - a tag like v0.1.0 is pushed,
+#   - pyproject.toml (the version) or this file changes on main, or
+#   - you start it by hand from the Actions tab ("Run workflow").
+# If a release for the version in pyproject.toml already exists, it does nothing.
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - .github/workflows/release.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -17,22 +31,51 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Work out the release tag
+        id: tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+            $tag = "v$version"
+          }
+          gh release view $tag *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Output "tag=$tag exists=$exists"
+
       - name: Install build tools
+        if: steps.tag.outputs.exists == 'false'
         run: python -m pip install build pyinstaller
+
       - name: Run tests
+        if: steps.tag.outputs.exists == 'false'
         run: python -m unittest discover -s tests
+
       - name: Build wheel and sdist
+        if: steps.tag.outputs.exists == 'false'
         run: python -m build
+
       - name: Build standalone Windows executable
+        if: steps.tag.outputs.exists == 'false'
         run: |
           pyinstaller --onefile --name filerescue scripts/launcher.py
           dist\filerescue.exe --version
           Move-Item dist\filerescue.exe dist\filerescue-windows-x64.exe
+
       - name: Publish release
+        if: steps.tag.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe `
-            --title "File Rescue ${{ github.ref_name }}" `
+          gh release create "${{ steps.tag.outputs.tag }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe `
+            --target "${{ github.sha }}" `
+            --title "File Rescue ${{ steps.tag.outputs.tag }}" `
             --generate-notes `
             --notes "Standalone Windows build: **filerescue-windows-x64.exe** (no Python needed; unsigned, so Windows SmartScreen may show a warning). Run it from an Administrator Command Prompt to read raw drives. See the README for usage."

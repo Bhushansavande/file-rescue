@@ -31,6 +31,8 @@ pip install .
 
 You can also run it without installing: `python -m filerescue ...`
 
+**Windows without Python:** download `filerescue-windows-x64.exe` from the [Releases](https://github.com/Bhushansavande/file-rescue/releases) page and run it from an Administrator Command Prompt (`filerescue-windows-x64.exe carve ...`). The file is not code-signed, so Windows SmartScreen may show a warning; if you prefer, install from source as shown above.
+
 ## Usage
 
 ### 1) SD card / USB drive / disk (most effective)
@@ -84,8 +86,10 @@ filerescue android -o D:\phone-trash  # pull them
 
 - **SSDs and modern phones** use TRIM, which really erases deleted data quickly; carving usually cannot help there.
 - Carving cannot restore a file's **name or folder** (that information is lost on delete); you get the content only.
-- Large files stored in **fragments** may come back incomplete or damaged.
+- Large files stored in **fragments** may come back incomplete or damaged. The carver reads a file from its start to where its own structure ends, so pieces stored elsewhere on the drive are missed. Such files are normally flagged `_partial`, but "complete" only means the file's structure was read to a clean end, not that every byte is guaranteed intact; open important recoveries to check them.
+- Files with no recognizable end (partly overwritten) are saved as `_partial` and capped at 64 MB each.
 - MP3 detection currently covers songs that start with an `ID3` tag.
+- A photo with a video appended (some phones' "motion photos") is recovered as the photo and the video separately.
 - This is an early (v0.1) tool. For critical data also try **PhotoRec/TestDisk** (free, open source).
 
 ## Development
@@ -94,7 +98,9 @@ filerescue android -o D:\phone-trash  # pull them
 python -m unittest discover -s tests -v
 ```
 
-The tests build synthetic disk images and check that recovered files match the originals byte for byte.
+The unit tests build synthetic disk images and check that recovered files match the originals byte for byte.
+
+`python scripts/realworld_test.py` goes further (Linux; needs `ffmpeg`, `mtools`, `dosfstools`, `e2fsprogs`, `pillow`): it generates real JPEG, PNG, GIF, WEBP, MP4, MOV, 3GP, AVI, MP3, M4A, WAV, PDF, DOCX, XLSX, APK and ZIP files, puts them on real FAT32 and ext4 images, deletes them and checks that every file is recovered exactly. CI runs it on every push. It has **not** yet been tested on physical SD cards or phones, so reports from real hardware are very welcome.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned and [CONTRIBUTING.md](CONTRIBUTING.md) to help.
 

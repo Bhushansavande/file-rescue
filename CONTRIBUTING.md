@@ -22,6 +22,12 @@ Contributions are welcome, including from beginners.
 - Do not add real personal photos or files as test data; use synthetic data.
 - Keep code comments, messages and docs in English so everyone can follow.
 
+## Testing
+
+- `python -m unittest discover -s tests -v` runs the unit tests (fast, no extra tools).
+- `python scripts/realworld_test.py` generates real media, puts it on real FAT32 and ext4 images, deletes it and checks recovery. It needs Linux with `ffmpeg`, `mtools`, `dosfstools`, `e2fsprogs` and `pillow`; CI runs it too.
+- Every bug fix should come with a regression test that fails without the fix.
+
 ## Reporting bugs
 
 Open an issue and include your OS, Python version, the command you ran, and the output. Never attach private recovered files.

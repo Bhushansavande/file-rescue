@@ -14,6 +14,7 @@ from .signatures import EXT_CATEGORY, RIFF_TYPES, SIGNATURES, select_signatures
 
 SECTOR = 512
 CHUNK = 4 * 1024 * 1024
+PARTIAL_CAP = 64 * 1024 * 1024   # largest "partial" file we will write when no end is found
 
 
 # ---------------------------------------------------------------- reading helpers
@@ -89,6 +90,69 @@ def find_footer(f, off, sig, limit):
     return None
 
 
+def find_bytes(f, start, end, needle):
+    """Absolute offset of the first `needle` in [start, end), or None."""
+    pos, carry = start, b""
+    while pos < end:
+        data = read_at(f, pos, min(CHUNK, end - pos))
+        if not data:
+            return None
+        buf = carry + data
+        j = buf.find(needle)
+        if j != -1:
+            return pos - len(carry) + j
+        carry = buf[-(len(needle) - 1):] if len(needle) > 1 else b""
+        pos += len(data)
+    return None
+
+
+def png_length(f, off, limit):
+    """Walk the PNG chunks (length, type, data, CRC) until IEND.
+
+    Searching for the IEND bytes alone would stop early if they appear inside another chunk."""
+    pos = off + 8
+    first = True
+    while pos - off < limit:
+        h = read_at(f, pos, 8)
+        if len(h) < 8:
+            return None
+        n, typ = int.from_bytes(h[:4], "big"), h[4:8]
+        if n > 0x7FFFFFFF or not typ.isalpha():
+            return None
+        if first and (typ != b"IHDR" or n != 13):
+            return None
+        first = False
+        pos += 12 + n
+        if typ == b"IEND":
+            return pos - off
+    return None
+
+
+_PDF_OBJ_START = __import__("re").compile(rb"\d+ \d+ obj|xref|trailer|%PDF-")
+
+
+def pdf_length(f, off, limit):
+    """Find the %%EOF that really ends the PDF.
+
+    Incremental updates and linearized PDFs contain several %%EOF markers; after one, if more
+    PDF objects follow immediately, keep going."""
+    pos = off + 5
+    for _ in range(64):
+        e = find_bytes(f, pos, off + limit, b"%%EOF")
+        if e is None:
+            return None
+        end = e + 5
+        nxt = read_at(f, end, 80)
+        stripped = nxt.lstrip(b"\r\n \t")
+        if not (stripped and _PDF_OBJ_START.match(stripped) and not stripped.startswith(b"%PDF-")):
+            skipped = len(nxt) - len(stripped)
+            if nxt[:skipped].strip(b"\r\n") == b"" and skipped <= 2:
+                end += skipped              # trailing newline belongs to the file
+            return end - off
+        pos = end
+    return None
+
+
 def jpeg_length(f, off, limit):
     """Walk the JPEG markers to find the real end (FFD9).
 
@@ -134,16 +198,77 @@ def jpeg_length(f, off, limit):
     return None
 
 
+def _skip_sub_blocks(f, pos, end):
+    """Skip a GIF data sub-block chain. Returns the position after its 0-length terminator."""
+    while pos < end:
+        b = read_at(f, pos, 1)
+        if not b:
+            return None
+        pos += 1 + b[0]
+        if b[0] == 0:
+            return pos
+    return None
+
+
+def gif_length(f, off, limit):
+    """Walk the GIF block structure to the real trailer (0x3B).
+
+    A bare 00 3B can occur inside compressed image data, so searching for it truncates files."""
+    end = off + limit
+    head = read_at(f, off, 13)
+    if len(head) < 13 or head[:4] != b"GIF8" or head[4:5] not in (b"7", b"9") or head[5:6] != b"a":
+        return None
+    pos = off + 13
+    if head[10] & 0x80:                      # global color table
+        pos += 3 * (1 << ((head[10] & 7) + 1))
+    while pos < end:
+        b = read_at(f, pos, 1)
+        if not b:
+            return None
+        if b[0] == 0x3B:                     # trailer
+            return pos + 1 - off
+        if b[0] == 0x21:                     # extension: label byte, then sub-blocks
+            pos = _skip_sub_blocks(f, pos + 2, end)
+        elif b[0] == 0x2C:                   # image: 9-byte descriptor, optional color table, LZW size, data
+            d = read_at(f, pos, 10)
+            if len(d) < 10:
+                return None
+            pos += 10
+            if d[9] & 0x80:
+                pos += 3 * (1 << ((d[9] & 7) + 1))
+            pos = _skip_sub_blocks(f, pos + 1, end)
+        else:
+            return None
+        if pos is None:
+            return None
+    return None
+
+
 def zip_length(f, off, limit):
-    sig = next(s for s in SIGNATURES if s.kind == "zip")
-    end = find_footer(f, off, sig, limit)
-    if end is None:
-        return None
-    tail = read_at(f, off + end, 18)
-    if len(tail) < 18:
-        return None
-    comment = int.from_bytes(tail[16:18], "little")
-    return end + 18 + comment
+    """Find the End Of Central Directory record that belongs to this archive.
+
+    A stored (uncompressed) ZIP nested inside an APK/ZIP carries its own EOCD, so the first
+    one found is not necessarily the right one. The real one satisfies
+    start + central_dir_offset + central_dir_size == its own position."""
+    pos = off + 4
+    while pos < off + limit:
+        p = find_bytes(f, pos, off + limit, b"PK\x05\x06")
+        if p is None:
+            return None
+        rec = read_at(f, p, 22)
+        if len(rec) == 22:
+            cd_size = int.from_bytes(rec[12:16], "little")
+            cd_off = int.from_bytes(rec[16:20], "little")
+            comment = int.from_bytes(rec[20:22], "little")
+            zip64 = cd_off == 0xFFFFFFFF or cd_size == 0xFFFFFFFF
+            if zip64 or off + cd_off + cd_size == p:
+                return p - off + 22 + comment
+        pos = p + 1
+    return None
+
+
+_MP4_BOXES = {b"ftyp", b"moov", b"mdat", b"free", b"skip", b"wide", b"uuid", b"moof", b"mfra",
+              b"styp", b"sidx", b"pdin", b"meta", b"udta", b"junk", b"pnot", b"prft", b"emsg"}
 
 
 def mp4_length(f, off, limit):
@@ -155,18 +280,18 @@ def mp4_length(f, off, limit):
             break
         size = int.from_bytes(h[:4], "big")
         typ = h[4:8]
-        if not all(32 <= c < 127 for c in typ):
+        if typ not in _MP4_BOXES:       # unknown type: this is where the file ends
             break
         if size == 1:
             if len(h) < 16:
                 break
             size = int.from_bytes(h[8:16], "big")
-        if size < 8:
+        if size < 8 or pos - off + size > limit:
             break
-        if typ in (b"moov", b"mdat"):
+        if typ in (b"moov", b"mdat", b"moof"):
             saw_media = True
         pos += size
-    return min(pos - off, limit) if saw_media else None
+    return pos - off if saw_media else None
 
 
 _BR_V1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0]
@@ -220,15 +345,18 @@ def measure(f, off, sig, nxt, keep_partial=True):
             return None
         length = jpeg_length(f, off, limit)
     elif sig.kind == "footer":
-        if sig.ext == "png" and head[12:16] != b"IHDR":
-            return None
-        length = find_footer(f, off, sig, limit)
-        if length and sig.ext == "pdf":
-            tail = read_at(f, off + length, 2)
-            if tail[:2] == b"\r\n":
-                length += 2
-            elif tail[:1] in (b"\n", b"\r"):
-                length += 1
+        if sig.ext == "png":
+            if head[12:16] != b"IHDR":
+                return None
+            length = png_length(f, off, limit)
+        elif sig.ext == "gif":
+            if head[:6] not in (b"GIF87a", b"GIF89a"):
+                return None
+            length = gif_length(f, off, limit)
+        elif sig.ext == "pdf":
+            length = pdf_length(f, off, limit)
+        else:
+            length = find_footer(f, off, sig, limit)
     elif sig.kind == "zip":
         length = zip_length(f, off, limit)
     elif sig.kind == "riff":
@@ -260,8 +388,9 @@ def measure(f, off, sig, nxt, keep_partial=True):
         return length, ext, True
     if not keep_partial:
         return None
-    # no clean end found (partly overwritten): take up to the next candidate or the size limit
-    part = min(limit, nxt - off) if nxt else min(limit, CHUNK)
+    # no clean end found (partly overwritten): take up to the next candidate, the size limit,
+    # or PARTIAL_CAP, so a false hit can never produce a huge junk file
+    part = min(limit, PARTIAL_CAP, (nxt - off) if nxt else PARTIAL_CAP)
     return (part, ext, False) if part > 0 else None
 
 
@@ -332,6 +461,12 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
             suffix = "" if complete else "_partial"
             path = os.path.join(folder, f"{len(results) + 1:05d}_{off:#x}{suffix}.{ext}")
             size = copy_range(f, off, length, path)
+            if complete and size < length:
+                # the measured end lies beyond the end of the source: the file is cut off
+                complete = False
+                new_path = path.rsplit(".", 1)[0] + "_partial." + ext
+                os.replace(path, new_path)
+                path = new_path
             if ext == "zip" and complete:
                 new_ext = refine_zip_ext(path)
                 if new_ext != "zip":

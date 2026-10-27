@@ -1,0 +1,37 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds the packages and a Windows .exe and publishes a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install build pyinstaller
+      - name: Run tests
+        run: python -m unittest discover -s tests
+      - name: Build wheel and sdist
+        run: python -m build
+      - name: Build standalone Windows executable
+        run: |
+          pyinstaller --onefile --name filerescue scripts/launcher.py
+          dist\filerescue.exe --version
+          Move-Item dist\filerescue.exe dist\filerescue-windows-x64.exe
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe `
+            --title "File Rescue ${{ github.ref_name }}" `
+            --generate-notes `
+            --notes "Standalone Windows build: **filerescue-windows-x64.exe** (no Python needed; unsigned, so Windows SmartScreen may show a warning). Run it from an Administrator Command Prompt to read raw drives. See the README for usage."

@@ -10,6 +10,7 @@ import os
 import zipfile
 from dataclasses import dataclass
 
+from . import formats
 from .signatures import (EXT_CATEGORY, RIFF_TYPES, SIGNATURES, allowed_extensions,
                          select_signatures)
 
@@ -373,13 +374,25 @@ def measure(f, off, sig, nxt, keep_partial=True):
         if not 12 <= box <= 128:
             return None
         brand = head[8:12]
-        if brand == b"qt  ":
+        if brand in (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"):
+            ext = "heic"
+        elif brand in (b"avif", b"avis"):
+            ext = "avif"
+        elif brand == b"qt  ":
             ext = "mov"
         elif brand.startswith(b"3g"):
             ext = "3gp"
         elif brand == b"M4A ":
             ext = "m4a"
         length = mp4_length(f, off, limit)
+    elif sig.kind == "walker":
+        try:
+            length, ext = getattr(formats, sig.walker)(
+                lambda o, n: read_at(f, o, n), off, limit)
+        except formats.NotThisFormat:
+            return None
+        if length is None and sig.strict:
+            return None
     elif sig.kind == "mp3":
         length = mp3_length(f, off, head, limit)
         if length is None:

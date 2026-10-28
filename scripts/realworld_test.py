@@ -112,6 +112,33 @@ def make_media(d):
     ff(*v, "sine=frequency=770:duration=8", "-c:a", "aac", "-f", "ipod", p("voice.m4a"))
     ff(*v, "sine=frequency=300:duration=5", "-c:a", "pcm_s16le", p("tone.wav"))
 
+    # newer formats (v0.2): WhatsApp voice notes, MKV/WebM, HEIC/BMP/TIFF, SQLite, 7z
+    ff(*v, "sine=frequency=520:duration=6", "-c:a", "libopus", p("voice_note.opus"))
+    ff(*v, "sine=frequency=380:duration=5", "-c:a", "libvorbis", p("song.ogg"))
+    ff(*v, "testsrc2=size=320x240:rate=25", *v, "sine=frequency=450", "-t", "3", "-c:v", "libx264",
+       "-pix_fmt", "yuv420p", "-c:a", "aac", p("movie.mkv"))
+    ff(*v, "testsrc2=size=320x240:rate=25", "-t", "2", "-c:v", "libvpx", p("clip.webm"))
+    photo(900, 600, 30).save(p("scan.bmp"))
+    photo(700, 500, 31).save(p("scan.tif"))
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        photo(1200, 900, 32).save(p("iphone.heic"), quality=80)
+    except ImportError:
+        print("pillow-heif not installed: skipping the HEIC sample")
+    import sqlite3
+    db = sqlite3.connect(p("msgstore.db"))
+    db.execute("create table messages(id integer primary key, text text)")
+    db.executemany("insert into messages(text) values (?)", [("hello %d" % i * 4,) for i in range(4000)])
+    db.commit()
+    db.close()
+    try:
+        import py7zr
+        with py7zr.SevenZipFile(p("backup.7z"), "w") as z:
+            z.writestr(blob(120000), "data.bin")
+    except ImportError:
+        print("py7zr not installed: skipping the 7z sample")
+
 
 def sha(path):
     with open(path, "rb") as fh:

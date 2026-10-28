@@ -10,10 +10,12 @@ class Signature:
     name: str
     ext: str
     header: bytes
-    kind: str                # jpeg | footer | zip | riff | mp4 | mp3
+    kind: str                # jpeg | footer | zip | riff | mp4 | mp3 | walker
     header_offset: int = 0   # the header starts this many bytes into the file
     footer: bytes = b""
     max_size: int = 100 * MB
+    walker: str = ""         # for kind "walker": the function in formats.py that measures the file
+    strict: bool = False     # a short header gives many false hits: never save these as partial
 
 
 SIGNATURES = [
@@ -31,6 +33,18 @@ SIGNATURES = [
     # ZIP family: ZIP, APK, DOCX, XLSX, PPTX
     Signature("ZIP/APK/DOCX", "zip", b"PK\x03\x04", "zip", footer=b"PK\x05\x06",
               max_size=1024 * MB),
+    Signature("Ogg (Opus/Vorbis)", "ogg", b"OggS", "walker", walker="ogg_walk", max_size=500 * MB),
+    Signature("Matroska/WebM", "ebml", b"\x1a\x45\xdf\xa3", "walker", walker="ebml_walk",
+              max_size=4096 * MB),
+    Signature("SQLite database", "sqlite", b"SQLite format 3\x00", "walker",
+              walker="sqlite_walk", max_size=1024 * MB),
+    Signature("BMP", "bmp", b"BM", "walker", walker="bmp_walk", strict=True, max_size=200 * MB),
+    Signature("7-Zip", "7z", b"7z\xbc\xaf\x27\x1c", "walker", walker="sevenzip_walk",
+              max_size=1024 * MB),
+    Signature("TIFF / RAW (little-endian)", "tiff", b"II*\x00", "walker", walker="tiff_walk",
+              strict=True, max_size=200 * MB),
+    Signature("TIFF / RAW (big-endian)", "tiff", b"MM\x00*", "walker", walker="tiff_walk",
+              strict=True, max_size=200 * MB),
 ]
 
 # RIFF sub-type (bytes 8..12) -> extension
@@ -39,11 +53,15 @@ RIFF_TYPES = {b"WEBP": "webp", b"WAVE": "wav", b"AVI ": "avi"}
 # output folder for each extension
 EXT_CATEGORY = {
     "jpg": "photos", "png": "photos", "gif": "photos", "webp": "photos",
+    "heic": "photos", "avif": "photos", "bmp": "photos",
+    "tif": "photos", "cr2": "photos", "dng": "photos", "nef": "photos", "arw": "photos",
     "mp4": "videos", "mov": "videos", "3gp": "videos", "avi": "videos",
-    "mp3": "music", "m4a": "music", "wav": "music",
+    "mkv": "videos", "webm": "videos", "ogv": "videos",
+    "mp3": "music", "m4a": "music", "wav": "music", "opus": "music", "ogg": "music",
     "apk": "apps",
     "pdf": "documents", "docx": "documents", "xlsx": "documents", "pptx": "documents",
-    "zip": "archives",
+    "sqlite": "databases",
+    "zip": "archives", "7z": "archives",
 }
 
 
@@ -54,11 +72,18 @@ TYPE_EXTS = {
     "mp4": {"mp4"}, "mov": {"mov"}, "3gp": {"3gp"}, "m4a": {"m4a"},
     "pdf": {"pdf"}, "zip": {"zip"}, "apk": {"apk"},
     "docx": {"docx"}, "xlsx": {"xlsx"}, "pptx": {"pptx"},
-    "photos": {"jpg", "png", "gif", "webp"},
-    "videos": {"mp4", "mov", "3gp", "avi"},
-    "music": {"mp3", "m4a", "wav"},
+    "heic": {"heic"}, "avif": {"avif"}, "bmp": {"bmp"}, "tif": {"tif"}, "tiff": {"tif"},
+    "cr2": {"cr2"}, "dng": {"dng"}, "nef": {"nef"}, "arw": {"arw"},
+    "mkv": {"mkv"}, "webm": {"webm"}, "ogv": {"ogv"}, "opus": {"opus"}, "ogg": {"ogg"},
+    "sqlite": {"sqlite"}, "db": {"sqlite"}, "7z": {"7z"},
+    "raw": {"cr2", "dng", "nef", "arw", "tif"},
+    "photos": {"jpg", "png", "gif", "webp", "heic", "avif", "bmp", "tif", "cr2", "dng",
+               "nef", "arw"},
+    "videos": {"mp4", "mov", "3gp", "avi", "mkv", "webm", "ogv"},
+    "music": {"mp3", "m4a", "wav", "opus", "ogg"},
     "apps": {"apk"},
     "documents": {"pdf", "docx", "xlsx", "pptx"},
+    "databases": {"sqlite"},
 }
 
 # Which signature (container format) has to be scanned for each final extension.
@@ -67,6 +92,9 @@ EXT_SIGNATURE = {
     "webp": "riff", "wav": "riff", "avi": "riff",
     "mp4": "mp4", "mov": "mp4", "3gp": "mp4", "m4a": "mp4",
     "zip": "zip", "apk": "zip", "docx": "zip", "xlsx": "zip", "pptx": "zip",
+    "heic": "mp4", "avif": "mp4", "bmp": "bmp", "7z": "7z", "sqlite": "sqlite",
+    "mkv": "ebml", "webm": "ebml", "opus": "ogg", "ogg": "ogg", "ogv": "ogg",
+    "tif": "tiff", "cr2": "tiff", "dng": "tiff", "nef": "tiff", "arw": "tiff",
 }
 
 

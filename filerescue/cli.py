@@ -40,8 +40,19 @@ def cmd_carve(a):
         _out(str(e))
         return 2
     print(file=sys.stderr)
+    from . import organize as org
+
+    removed = 0
+    if res:
+        res, removed = org.organize(res, a.output, dedupe=a.dedupe, date_names=a.date_names,
+                                    by_month=a.by_month, log=_out)
+        if not a.no_report:
+            org.write_report(res, a.output, source=os.path.basename(a.source))
     full = sum(1 for r in res if r.complete)
-    _out(f"\nDone: {full} complete, {len(res) - full} partial -> {os.path.abspath(a.output)}")
+    extra = f", {removed} duplicates removed" if removed else ""
+    _out(f"\nDone: {full} complete, {len(res) - full} partial{extra} -> {os.path.abspath(a.output)}")
+    if res and not a.no_report:
+        _out(f"Open {os.path.join(os.path.abspath(a.output), 'report.html')} in a browser to look through the results.")
     return 0
 
 
@@ -49,7 +60,8 @@ def cmd_types(_a):
     _out("Supported types:")
     for s in SIGNATURES:
         _out(f"  {s.name}")
-    _out("\nExamples for --types: jpg,png | photos | videos | music | apps | documents")
+    _out("\nExamples for --types: jpg,png | photos | videos | music | apps | documents | "
+         "raw | databases")
     return 0
 
 
@@ -138,6 +150,15 @@ def build_parser():
                    help="also look for files that do not start on a sector boundary "
                         "(slower, more false hits)")
     c.add_argument("--no-partial", action="store_true", help="skip partially recovered files")
+    c.add_argument("--dedupe", action="store_true",
+                   help="delete byte-identical duplicate files (the first copy is kept)")
+    c.add_argument("--date-names", action="store_true",
+                   help="name photos/videos by the date inside the file (EXIF, MP4) and "
+                        "songs by 'Artist - Title' (ID3)")
+    c.add_argument("--by-month", action="store_true",
+                   help="sort files into YYYY-MM folders by their capture date")
+    c.add_argument("--no-report", action="store_true",
+                   help="do not write report.html and recovered.csv")
     c.set_defaults(fn=cmd_carve)
 
     t = sub.add_parser("types", help="list supported file types")

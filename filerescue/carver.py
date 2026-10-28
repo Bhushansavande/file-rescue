@@ -448,6 +448,10 @@ class Recovered:
     size: int
     ext: str
     complete: bool
+    date: object = None        # datetime the photo/video was taken, when the file says so
+    title: str = ""            # song title (ID3), when present
+    artist: str = ""
+    sha256: str = ""           # filled in by organize()
 
 
 def carve(source, outdir, types=None, aligned=True, keep_partial=True,

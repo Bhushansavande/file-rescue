@@ -29,7 +29,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   real-media:
-    name: real media on FAT32 and ext4 images
+    name: real media and undelete on real file systems
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
@@ -41,7 +41,9 @@ jobs:
         run: |
           APT='-o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20'
           sudo apt-get $APT update
-          sudo apt-get $APT install -y --no-install-recommends ffmpeg mtools dosfstools e2fsprogs
+          sudo apt-get $APT install -y --no-install-recommends ffmpeg mtools dosfstools e2fsprogs ntfs-3g exfat-fuse exfatprogs
           python -m pip install pillow pillow-heif py7zr
       - name: Recover real files from real file systems
         run: python scripts/realworld_test.py
+      - name: Undelete with names on FAT32, exFAT and NTFS
+        run: python scripts/realworld_fs_test.py

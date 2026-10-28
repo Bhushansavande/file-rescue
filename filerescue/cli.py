@@ -56,6 +56,45 @@ def cmd_carve(a):
     return 0
 
 
+def cmd_undelete(a):
+    from . import filesystems as fs
+
+    if not os.path.exists(a.source):
+        _out(f"Source not found: {a.source}")
+        return 2
+    with open(a.source, "rb", buffering=0) as f:
+        vols = fs.open_filesystems(f)
+        if not vols:
+            _out("No FAT, exFAT or NTFS file system found. Use 'filerescue carve' for other "
+                 "file systems or damaged drives.")
+            return 1
+        total = copied = 0
+        for label, vol in vols:
+            _out(f"Volume: {vol.label}{' (' + label + ')' if label else ''}")
+            for e in vol.entries():
+                if not (e.deleted or a.all):
+                    continue
+                total += 1
+                when = f"{e.modified:%Y-%m-%d %H:%M}" if e.modified else " " * 16
+                tag = "deleted" if e.deleted else "exists "
+                _out(f"  {when}  {e.size:>12,}  {tag}  {e.status:<11} {e.path}")
+                if not a.output:
+                    continue
+                if e.status == "overwritten" and not a.include_overwritten:
+                    continue
+                if e.status == "unsupported":
+                    continue
+                top = [label.replace(" ", "_")] if label else []
+                dest = os.path.join(a.output, *top, *fs.safe_path(e.path))
+                fs.copy_entry(f, e, fs.unique_path(dest))
+                copied += 1
+    if a.output:
+        _out(f"\nRecovered {copied} of {total} files -> {os.path.abspath(a.output)}")
+    else:
+        _out(f"\n{total} files listed. Add -o <folder> to recover the 'intact' ones.")
+    return 0
+
+
 def cmd_types(_a):
     _out("Supported types:")
     for s in SIGNATURES:
@@ -160,6 +199,15 @@ def build_parser():
     c.add_argument("--no-report", action="store_true",
                    help="do not write report.html and recovered.csv")
     c.set_defaults(fn=cmd_carve)
+
+    u = sub.add_parser("undelete", help="list/recover deleted files WITH their names and folders "
+                                        "(FAT32, exFAT, NTFS)")
+    u.add_argument("source", help="image, device or partition")
+    u.add_argument("-o", "--output", help="recover here (a different drive than the source)")
+    u.add_argument("--all", action="store_true", help="also list files that were not deleted")
+    u.add_argument("--include-overwritten", action="store_true",
+                   help="also copy files whose space was reused (the content is probably wrong)")
+    u.set_defaults(fn=cmd_undelete)
 
     t = sub.add_parser("types", help="list supported file types")
     t.set_defaults(fn=cmd_types)

@@ -137,23 +137,38 @@ def cmd_recyclebin(a):
 def cmd_android(a):
     from . import android
 
-    ok, msg = android.check_device()
-    _out(msg)
-    if not ok:
-        return 1
-    paths = android.find_trashed()
+    kinds = tuple(k.strip() for k in a.kinds.split(",") if k.strip()) if a.kinds else android.KINDS
+    bad = [k for k in kinds if k not in android.KINDS]
+    if bad:
+        _out(f"Unknown kind: {bad[0]} (choose from {', '.join(android.KINDS)})")
+        return 2
+    if a.local:
+        root = a.root or android.local_root()
+        if not root or not os.path.isdir(root):
+            _out("Phone storage not found. In Termux run 'termux-setup-storage' first, or pass --root.")
+            return 1
+        _out(f"Scanning {root} on this phone")
+        paths = android.scan_local(root, kinds)
+    else:
+        ok, msg = android.check_device()
+        _out(msg)
+        if not ok:
+            return 1
+        paths = [p for p in android.find_trashed() if (android.classify(p) or "trash") in kinds]
     if not paths:
-        _out("No trashed files found on the phone.")
+        _out("Nothing found in the trash, WhatsApp status or thumbnail folders.")
         return 0
     for p in paths:
+        kind = android.classify(p) or "trash"
         name, exp = android.parse_trashed_name(os.path.basename(p))
         extra = f"  (auto-deletes: {exp:%Y-%m-%d})" if exp else ""
-        _out(f"  {name}{extra}")
+        _out(f"  [{kind}] {name}{extra}")
     if a.output:
-        pulled = android.pull_all(paths, a.output, log=_out)
-        _out(f"\nPulled {len(pulled)} files -> {os.path.abspath(a.output)}")
+        copier = android.copy_local if a.local else android.pull_all
+        pulled = copier(paths, a.output, log=_out)
+        _out(f"\nCopied {len(pulled)} files -> {os.path.abspath(a.output)}")
     else:
-        _out("\nAdd -o <folder> to pull them.")
+        _out("\nAdd -o <folder> to copy them.")
     return 0
 
 
@@ -226,8 +241,12 @@ def build_parser():
     r.add_argument("-o", "--output", help="copy items here")
     r.set_defaults(fn=cmd_recyclebin)
 
-    a = sub.add_parser("android", help="pull trashed files from an Android phone (over ADB)")
-    a.add_argument("-o", "--output", help="pull files here")
+    a = sub.add_parser("android", help="recover trash, WhatsApp statuses and thumbnails from an Android phone")
+    a.add_argument("-o", "--output", help="copy files here")
+    a.add_argument("--local", action="store_true",
+                   help="File Rescue is running ON the phone (Termux): scan its own storage, no adb")
+    a.add_argument("--root", help="with --local: the folder to scan (default: phone storage)")
+    a.add_argument("--kinds", help="trash,status,thumbnails (default: all three)")
     a.set_defaults(fn=cmd_android)
 
     i = sub.add_parser("image", help="create a safe image copy of a device")

@@ -103,7 +103,11 @@ class NewFormats(unittest.TestCase):
             with open(src, "wb") as fh:
                 fh.write(data)
             res = carve(src, os.path.join(d, "out"), **kw)
-            return [(r.ext, r.complete, open(r.path, "rb").read()) for r in res]
+            out = []
+            for r in res:
+                with open(r.path, "rb") as fh:
+                    out.append((r.ext, r.complete, fh.read()))
+            return out
 
     def check(self, blob, ext):
         got = self.carve_bytes(disk_with([blob]))

@@ -381,6 +381,40 @@ esac
         self.assertIn("IMG_1.jpg", buf.getvalue())
         self.assertEqual(sorted(os.listdir(out)), ["IMG_1.jpg", "IMG_2.jpg"])
 
+    def test_classify(self):
+        c = android.classify
+        self.assertEqual(c("/sdcard/DCIM/Camera/.trashed-1893456000-a.jpg"), "trash")
+        self.assertEqual(c("/sdcard/Android/data/x/files/.Trash/a.jpg"), "trash")
+        self.assertEqual(c("/sdcard/WhatsApp/Media/.Statuses/v.mp4"), "status")
+        self.assertEqual(c("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/.Statuses/a.jpg"), "status")
+        self.assertEqual(c("/sdcard/DCIM/.thumbnails/123"), "thumbnails")
+        self.assertIsNone(c("/sdcard/DCIM/Camera/IMG_1.jpg"))
+
+    def test_local_mode_finds_and_copies_all_three_kinds(self):
+        for rel, data in ((".Statuses/s1.mp4", b"status"), (".thumbnails/99", b"thumb"),
+                          ("Pictures/normal.jpg", b"normal")):
+            p = os.path.join(self.phone, "WhatsApp", "Media", rel) if rel.startswith(".S") \
+                else os.path.join(self.phone, "DCIM", rel) if rel.startswith(".t") \
+                else os.path.join(self.phone, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "wb") as fh:
+                fh.write(data)
+        out = os.path.join(self.tmp, "local_out")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli.main(["android", "--local", "--root", self.phone, "-o", out])
+        self.assertEqual(code, 0, buf.getvalue())
+        self.assertEqual(sorted(os.listdir(out)), ["IMG_1.jpg", "IMG_2.jpg", "thumbnails", "whatsapp-status"])
+        self.assertEqual(os.listdir(os.path.join(out, "whatsapp-status")), ["s1.mp4"])
+        self.assertNotIn("normal.jpg", buf.getvalue())
+
+    def test_local_mode_kind_filter_and_bad_kind(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(cli.main(["android", "--local", "--root", self.phone, "--kinds", "status"]), 0)
+            self.assertEqual(cli.main(["android", "--kinds", "bogus"]), 2)
+        self.assertIn("Nothing found", buf.getvalue())
+
     def test_no_adb_gives_a_helpful_message(self):
         os.environ["PATH"] = os.path.join(self.tmp, "empty")
         ok, msg = android.check_device()

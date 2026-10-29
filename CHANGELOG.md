@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0]: 2026-10-29
+
+### Added
+- **Desktop window** (`filerescue gui`, and `filerescue-gui-windows-x64.exe` in releases): drive picker, file-type choice, progress, thumbnail preview, "Recover selected".
+- **`undelete` command**: lists and recovers deleted files **with their original names and folders** from FAT12/16/32, exFAT and NTFS volumes (also inside MBR/GPT disks), and tells which ones are still `intact` and which were `overwritten`.
+- New formats: HEIC, AVIF, Opus/Ogg (WhatsApp voice notes), MKV, WebM, SQLite (WhatsApp databases), BMP, TIFF, RAW (CR2, NEF, ARW, DNG; experimental) and 7z. New `--types` groups: `raw`, `databases`.
+- **HTML report** (`report.html`) with thumbnails and players, plus `recovered.csv`.
+- `--dedupe` (remove identical files), `--date-names` (name by EXIF/MP4 date or ID3 artist and title), `--by-month`.
+- `android` command: WhatsApp statuses and thumbnails besides trash; `--local` scans the phone itself (Termux); `--kinds`.
+- Flutter Android app in `android_app/` (built in CI).
+- Tests on real NTFS and exFAT volumes written by the real drivers, run in CI.
+
+### Changed
+- Scans can be cancelled (used by the window).
+
 ## [0.1.0]: 2026-10-27
 
 ### Fixed (found by testing on real FAT32 / ext4 images)

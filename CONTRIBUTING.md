@@ -31,3 +31,18 @@ Contributions are welcome, including from beginners.
 ## Reporting bugs
 
 Open an issue and include your OS, Python version, the command you ran, and the output. Never attach private recovered files.
+
+## Adding a new file type
+
+1. Add a `Signature` in `filerescue/signatures.py` (header bytes, or `kind="walker"` with a function name).
+2. Write the length walker in `filerescue/formats.py` (or `carver.py`): follow the format's own structure to its end, raise `NotThisFormat` on false hits.
+3. Add the extension to `EXT_CATEGORY`, `TYPE_EXTS` and `EXT_SIGNATURE`.
+4. Add a test in `tests/test_formats.py` that builds a file, hides it in random data and checks it comes back byte for byte; add a real sample to `scripts/realworld_test.py` when a tool can generate one.
+
+## Good first contributions
+
+- Formats: FLAC, AAC/ADTS, FLV, MP3 without an ID3 tag, legacy DOC/XLS, PSD, SVG.
+- A `--resume` option for interrupted deep scans.
+- ext4 undelete (read the inode table and journal).
+- A `filerescue` package for winget, Scoop, Homebrew or AUR.
+- Testing on a real SD card or phone and reporting the result (open an issue with the exact command and output).

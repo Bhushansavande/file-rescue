@@ -4,43 +4,38 @@
 
 Help anyone recover deleted photos, videos, music and APKs using **free and open-source** tools, and be honest about where recovery is not possible.
 
-## Current status: v0.1 ✅
+## Done
 
+### v0.1
 - [x] File carving: JPG, PNG, GIF, WEBP, MP4/MOV/3GP/M4A, MP3, WAV, AVI, PDF, ZIP, APK, DOCX/XLSX/PPTX
-- [x] Exact length measurement (JPEG markers, MP4 boxes, MP3 frames, ZIP end record)
-- [x] Windows Recycle Bin restore (original names)
-- [x] Android `.trashed-*` / trash files over ADB
-- [x] Safe image copy (`image`)
-- [x] English documentation
-- [x] Automated tests and CI (Linux, Windows, macOS)
+- [x] Exact length measurement per format, partial files flagged
+- [x] Windows Recycle Bin restore with original names
+- [x] Android trash over ADB, safe image copy, CI on Linux/Windows/macOS
 
-## v0.2: usability
+### v0.2
+- [x] Desktop window: drive picker, type selection, progress, thumbnail preview, recover selected
+- [x] `undelete`: original names and folders on FAT12/16/32, exFAT and NTFS, MBR/GPT disks, overwritten-space detection
+- [x] More formats: HEIC, AVIF, Opus/Ogg (WhatsApp voice notes), MKV, WebM, SQLite (WhatsApp databases), BMP, TIFF, Canon/Nikon/Sony/DNG RAW, 7z
+- [x] HTML report with previews, CSV list, duplicate removal, EXIF/MP4/ID3 date naming
+- [x] Android: WhatsApp statuses, thumbnails and trash, over ADB or directly on the phone (Termux)
+- [x] Flutter Android app (builds in CI; not yet tested on many phones)
+- [x] Tests on real NTFS and exFAT volumes created by the real drivers
 
-- [ ] **GUI** (Tkinter or Flutter desktop): pick a drive, pick types, press a button
-- [ ] Thumbnail preview, save only selected files
-- [ ] Automatic drive listing (Windows/Linux)
-- [ ] Progress, time estimate, pause/resume
-- [ ] Translatable interface (multi-language support)
+## Next
 
-## v0.3: more file types
+### v0.3: harder recovery
+- [ ] Fragmented files: join pieces using file-system hints and format checks
+- [ ] ext4 and APFS undelete (names via journal / snapshots)
+- [ ] MP3 without ID3, AAC, FLAC, FLV, legacy Office (DOC/XLS)
+- [ ] Resume an interrupted scan
 
-- [ ] MP3 without ID3, AAC, FLAC, OGG, OPUS (WhatsApp audio)
-- [ ] HEIC/HEIF (iPhone), RAW (CR2/NEF/ARW), BMP, TIFF
-- [ ] MKV, WEBM, FLV; legacy Office (DOC/XLS)
-- [ ] SQLite (WhatsApp `msgstore.db`)
-- [ ] Duplicate removal (by hash); name files from EXIF/ID3 dates
+### v0.4: more apps
+- [ ] Decrypt WhatsApp backups with the user's own key (read-only helper)
+- [ ] Signed Windows builds, winget and Scoop packages
+- [ ] Flutter app on Google Play / F-Droid
 
-## v0.4: file systems
-
-- [ ] FAT32/exFAT directory entries, so recovery keeps **original names**
-- [ ] NTFS MFT parsing (names, dates)
-- [ ] Simple heuristics for fragmented files
-
-## v0.5: Android improvements
-
-- [ ] Flutter app that scans trash folders and backups on the phone (via Storage Access Framework)
-- [ ] Wizard that checks Google Photos / WhatsApp backups
-- [ ] Windows `.exe` and standalone releases for non-technical users
+### v1.0
+- [ ] Stable CLI, documented library API, tested on a wide range of real cards and phones
 
 ## Technical decisions
 
@@ -62,7 +57,6 @@ Help anyone recover deleted photos, videos, music and APKs using **free and open
 | Version | Goal |
 |---|---|
 | v0.1 | CLI, main types, Recycle Bin, Android trash ✅ |
-| v0.2 | GUI + preview |
-| v0.3 | More types + duplicates |
-| v0.4 | FAT/NTFS with original names |
-| v1.0 | Stable, fully documented, Windows `.exe` release |
+| v0.2 | Window, undelete with names, more formats, report, Android app ✅ |
+| v0.3 | Fragmented files, ext4, more audio/office types |
+| v1.0 | Stable and tested on real hardware at scale |

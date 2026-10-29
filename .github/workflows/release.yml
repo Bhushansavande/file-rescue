@@ -54,7 +54,7 @@ jobs:
 
       - name: Install build tools
         if: steps.tag.outputs.exists == 'false'
-        run: python -m pip install build pyinstaller
+        run: python -m pip install build pyinstaller pillow
 
       - name: Run tests
         if: steps.tag.outputs.exists == 'false'
@@ -67,10 +67,13 @@ jobs:
       - name: Build standalone Windows executable
         if: steps.tag.outputs.exists == 'false'
         run: |
-          pyinstaller --onefile --name filerescue --paths . scripts/launcher.py
+          pyinstaller --onefile --name filerescue --paths . --collect-submodules filerescue scripts/launcher.py
           dist\filerescue.exe --version
           dist\filerescue.exe types
           Move-Item dist\filerescue.exe dist\filerescue-windows-x64.exe
+          # windowed build: asks for Administrator rights so it can read whole drives
+          pyinstaller --onefile --noconsole --uac-admin --name filerescue-gui --paths . --collect-submodules filerescue --hidden-import PIL.ImageTk scripts/gui_launcher.py
+          Move-Item dist\filerescue-gui.exe dist\filerescue-gui-windows-x64.exe
 
       - name: Create checksums
         if: steps.tag.outputs.exists == 'false'
@@ -86,8 +89,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.tag.outputs.tag }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe dist/SHA256SUMS.txt `
+          gh release create "${{ steps.tag.outputs.tag }}" dist/*.whl dist/*.tar.gz dist/filerescue-windows-x64.exe dist/filerescue-gui-windows-x64.exe dist/SHA256SUMS.txt `
             --target "${{ github.sha }}" `
             --title "File Rescue ${{ steps.tag.outputs.tag }}" `
             --generate-notes `
-            --notes "Standalone Windows build: **filerescue-windows-x64.exe** (no Python needed; unsigned, so Windows SmartScreen may show a warning). Run it from an Administrator Command Prompt to read raw drives. Check downloads against SHA256SUMS.txt. See the README for usage."
+            --notes "Windows downloads (no Python needed; unsigned, so SmartScreen may show a warning): **filerescue-gui-windows-x64.exe** is the window with a drive picker and previews (double-click it); **filerescue-windows-x64.exe** is the command-line version. Check downloads against SHA256SUMS.txt. See the README for usage."

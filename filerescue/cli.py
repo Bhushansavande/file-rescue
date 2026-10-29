@@ -95,6 +95,12 @@ def cmd_undelete(a):
     return 0
 
 
+def cmd_gui(_a):
+    from . import gui
+
+    return gui.run()
+
+
 def cmd_types(_a):
     _out("Supported types:")
     for s in SIGNATURES:
@@ -208,6 +214,9 @@ def build_parser():
     u.add_argument("--include-overwritten", action="store_true",
                    help="also copy files whose space was reused (the content is probably wrong)")
     u.set_defaults(fn=cmd_undelete)
+
+    g = sub.add_parser("gui", help="open the desktop window (drive picker and previews)")
+    g.set_defaults(fn=cmd_gui)
 
     t = sub.add_parser("types", help="list supported file types")
     t.set_defaults(fn=cmd_types)

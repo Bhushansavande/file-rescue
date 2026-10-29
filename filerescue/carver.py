@@ -46,7 +46,11 @@ def read_at(f, offset, length):
 
 # ---------------------------------------------------------------- scanning
 
-def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK):
+class Cancelled(Exception):
+    """Raised when the caller asks a running scan to stop."""
+
+
+def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK, cancel=None):
     """Find all candidate file starts. Returns [(offset, Signature), ...] in order."""
     reach = max(s.header_offset + len(s.header) for s in sigs)
     hits = {}
@@ -69,6 +73,8 @@ def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK):
         carry = buf[-(reach - 1):] if reach > 1 else b""
         if progress:
             progress(pos)
+        if cancel and cancel():
+            raise Cancelled()
     return sorted(hits.items())
 
 
@@ -455,18 +461,20 @@ class Recovered:
 
 
 def carve(source, outdir, types=None, aligned=True, keep_partial=True,
-          progress=None, log=None):
+          progress=None, log=None, cancel=None):
     """Carve files out of `source` into `outdir`. Returns a list of Recovered."""
     sigs = select_signatures(types)
     allowed = allowed_extensions(types)   # None = keep every type
     os.makedirs(outdir, exist_ok=True)
     results = []
     with open(source, "rb", buffering=0) as f:
-        hits = scan(f, sigs, aligned=aligned, progress=progress)
+        hits = scan(f, sigs, aligned=aligned, progress=progress, cancel=cancel)
         if log:
             log(f"Candidate file starts found: {len(hits)}")
         last_end = -1
         for n, (off, sig) in enumerate(hits):
+            if cancel and cancel():
+                break                      # stop, but keep what was recovered so far
             if off < last_end:
                 continue  # candidate lies inside a file we already recovered
             nxt = hits[n + 1][0] if n + 1 < len(hits) else None

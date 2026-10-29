@@ -29,13 +29,13 @@ jobs:
           channel: stable
           cache: true
       - name: Create the Android project files
-        run: ./setup.sh
+        run: python3 ../scripts/ci_annotate.py ./setup.sh
       - name: Analyze
-        run: flutter analyze
+        run: python3 ../scripts/ci_annotate.py flutter analyze
       - name: Tests
-        run: flutter test
+        run: python3 ../scripts/ci_annotate.py flutter test
       - name: Build APK
-        run: flutter build apk --debug
+        run: python3 ../scripts/ci_annotate.py flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
           name: file-rescue-debug-apk

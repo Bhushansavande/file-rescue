@@ -422,5 +422,24 @@ esac
         self.assertIn("platform-tools", msg)
 
 
+class DamagedInput(unittest.TestCase):
+    def test_read_at_survives_impossible_offsets(self):
+        from filerescue.carver import read_at
+        with tempfile.TemporaryFile() as f:
+            f.write(b"x" * 2048)
+            f.flush()
+            self.assertEqual(read_at(f, -512, 16), b"")
+            self.assertEqual(read_at(f, 1 << 62, 16), b"")
+            self.assertEqual(read_at(f, 4096, 16), b"")
+
+    def test_undelete_on_noise_finds_nothing_and_does_not_crash(self):
+        from filerescue import filesystems as fsm
+        with tempfile.TemporaryFile() as f:
+            f.write(os.urandom(1 << 20))
+            f.flush()
+            f.seek(0)
+            self.assertEqual(fsm.open_filesystems(f), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -130,6 +130,13 @@ class NewFormats(unittest.TestCase):
     def test_mkv_unknown_size_segment(self):
         self.check(make_mkv(unknown=True), "mkv")
 
+    def test_mkv_live_recording_with_unknown_size_cluster(self):
+        head = make_mkv(unknown=True)
+        children = (b"\xe7\x81\x00" + b"\xa3" + vint(300, 2) + os.urandom(300)) * 3
+        blob = head + b"\x1f\x43\xb6\x75\x01\xff\xff\xff\xff\xff\xff\xff" + children
+        got = self.carve_bytes(b"\0" * 512 * 3 + blob + b"\0" * 4096)
+        self.assertEqual([(e, c, b) for e, c, b in got], [("mkv", True, blob)])
+
     def test_sqlite(self):
         self.check(make_sqlite(), "sqlite")
 

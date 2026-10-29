@@ -69,7 +69,9 @@ def ogg_walk(rd, off, limit):
 # ------------------------------------------------------------------ Matroska / WebM (EBML)
 
 _TOP_IDS = {0x114D9B74, 0x1549A966, 0x1654AE6B, 0x1F43B675, 0x1C53BB6B, 0x1941A469,
-            0x1043A770, 0x1254C367, 0xEC, 0xBF}
+            0x1043A770, 0x1254C367}                 # SeekHead, Info, Tracks, Cluster, Cues, ...
+_FILLER_IDS = {0xEC, 0xBF}                          # Void, CRC-32 (one byte: only trusted in context)
+_CLUSTER_CHILD_IDS = {0xE7, 0xA7, 0xAB, 0xA3, 0xA0, 0xAF, 0x5854, 0xEC, 0xBF}
 
 
 def _vint(b, i, keep_marker):
@@ -138,18 +140,22 @@ def ebml_walk(rd, off, limit):
     while p - off < limit:
         h = rd(p, 16)
         eid = _vint(h, 0, True)
-        if not eid or eid[0] not in _TOP_IDS:
+        if not eid or (eid[0] not in _TOP_IDS and eid[0] not in _FILLER_IDS):
             break
         sz = _vint(h, eid[1], False)
         if not sz:
             break
         size, sl2 = sz
+        if eid[0] in _FILLER_IDS:              # a one-byte id is too weak alone: the next element
+            nxt = _vint(rd(p + eid[1] + sl2 + size, 8), 0, True)   # must be a real top-level one
+            if _unknown(size, sl2) or not nxt or nxt[0] not in _TOP_IDS:
+                break
         if _unknown(size, sl2):                # an unknown-size Cluster: ends at the next top-level id
             q = p + eid[1] + sl2
             while q - off < limit:
                 c = rd(q, 16)
                 cid = _vint(c, 0, True)
-                if not cid or cid[0] in _TOP_IDS:
+                if not cid or cid[0] not in _CLUSTER_CHILD_IDS:
                     break
                 cs = _vint(c, cid[1], False)
                 if not cs or _unknown(*cs):

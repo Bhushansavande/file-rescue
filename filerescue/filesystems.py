@@ -16,6 +16,7 @@ from .carver import CHUNK, read_at
 
 MAX_DEPTH = 40
 MAX_ENTRIES = 2_000_000
+MAX_DIR_BYTES = 64 * 1024 * 1024      # no real directory is bigger; a damaged size field must not hang us
 
 
 @dataclass
@@ -164,7 +165,13 @@ class Fat:
             first = self.root_cluster
         if deleted_dir:
             return read_at(self.f, self.cluster_off(first), self.cs) if 2 <= first < self.clusters + 2 else b""
-        return b"".join(read_at(self.f, self.cluster_off(c), self.cs) for c in self.chain(first))
+        parts, total = [], 0
+        for c in self.chain(first):
+            parts.append(read_at(self.f, self.cluster_off(c), self.cs))
+            total += self.cs
+            if total >= MAX_DIR_BYTES:
+                break
+        return b"".join(parts)
 
     def entries(self):
         count = [0]
@@ -283,7 +290,7 @@ class ExFat:
     def chain(self, first, contiguous, length):
         n = (length + self.cs - 1) // self.cs
         if contiguous:
-            yield from range(first, first + n)
+            yield from range(first, min(first + n, self.clusters + 2))
             return
         c, seen = first, set()
         while 2 <= c < self.clusters + 2 and c not in seen and len(seen) < 4_000_000:
@@ -304,11 +311,14 @@ class ExFat:
         yield from self._walk(self.root, 0, False, "", False, 0, count)
 
     def _read_dir(self, first, contiguous, length):
-        if length:
-            span = [(self.cluster_off(c), self.cs) for c in self.chain(first, contiguous, length)]
-        else:
-            span = [(self.cluster_off(c), self.cs) for c in self.chain(first, False, 1 << 40)]
-        return b"".join(read_at(self.f, o, n) for o, n in span)
+        length = min(length, MAX_DIR_BYTES) if length else 1 << 40
+        parts, total = [], 0
+        for c in self.chain(first, contiguous, length):
+            parts.append(read_at(self.f, self.cluster_off(c), self.cs))
+            total += self.cs
+            if total >= MAX_DIR_BYTES:
+                break
+        return b"".join(parts)
 
     def _walk(self, first, length, contiguous, prefix, parent_deleted, depth, count):
         if depth > MAX_DEPTH:
@@ -499,11 +509,15 @@ class Ntfs:
 
     def _records(self):
         extents = self._runs_extents(self.mft_runs)
-        total = self.mft_size // self.rec
+        # a damaged size field must not make us read terabytes: stay inside the real extents
+        total = min(self.mft_size, sum(ln for _, ln in extents)) // self.rec
+        total = min(total, 100_000_000)
         step = max(1, CHUNK // self.rec)
         for first in range(0, total, step):
             n = min(step, total - first)
             blob = self._read_extents(extents, first * self.rec, n * self.rec)
+            if not blob:
+                break                       # ran past the end of the drive
             for k in range(n):
                 raw = blob[k * self.rec:(k + 1) * self.rec]
                 if len(raw) == self.rec and raw[:4] == b"FILE":
@@ -534,7 +548,7 @@ class Ntfs:
             if lcn is None:
                 continue
             for c in range(lcn, lcn + ln):
-                if c >> 3 >= len(bm) or bm[c >> 3] >> (c & 7) & 1:
+                if c < 0 or c >> 3 >= len(bm) or bm[c >> 3] >> (c & 7) & 1:
                     return False
         return True
 

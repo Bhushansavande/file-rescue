@@ -163,6 +163,52 @@ def check(kind, img, src, expect_overwritten=False):
     return problems
 
 
+def fuzz(kind, img, rounds=40):
+    """Damage the metadata of a real image many ways; undelete must never crash or hang."""
+    import random
+    import signal
+
+    rng = random.Random(5)
+    problems = []
+    with open(img, "rb", buffering=0) as f:
+        vols = fsm.open_filesystems(f)
+        if not vols:
+            return [f"{kind}: nothing to fuzz"]
+        v = vols[0][1]
+    if v.label == "NTFS":
+        hot = [v._mft_record_offset(0)]
+    elif v.label == "exFAT":
+        hot = [v.heap_off, v.fat_off]
+    else:
+        hot = [v.root_start, v.data_start, v.fat_start]
+    size = os.path.getsize(img)
+    work = img + ".fuzz"
+
+    def alarm(*_):
+        raise TimeoutError("hang")
+
+    signal.signal(signal.SIGALRM, alarm)
+    for i in range(rounds):
+        shutil.copy(img, work)
+        with open(work, "r+b") as f:
+            for _ in range(rng.choice([1, 5, 40, 300])):
+                f.seek(min(size - 1, rng.choice(hot) + rng.randrange(0, 200000)))
+                f.write(os.urandom(rng.choice([1, 2, 4, 16, 512])))
+        try:
+            signal.alarm(30)
+            with open(work, "rb", buffering=0) as f:
+                for _, vol in fsm.open_filesystems(f):
+                    for e in vol.entries():
+                        if e.extents and e.size < 2_000_000:
+                            fsm.copy_entry(f, e, os.devnull)
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{kind} fuzz round {i}: {type(e).__name__}: {e}")
+        finally:
+            signal.alarm(0)
+    os.remove(work)
+    return problems
+
+
 def main():
     kinds = []
     if have("mkfs.vfat", "mcopy", "mmd", "mdel"):
@@ -196,6 +242,8 @@ def main():
                     format_and_fill(kind, img, src, offset=2048 * 512 if variant == "mbr" else 0,
                                     overwrite=variant == "reused-space")
                     problems = check(kind, img, src, expect_overwritten=variant == "reused-space")
+                    if variant == "plain":
+                        problems += fuzz(kind, img)
                 except RuntimeError as e:
                     print(f"{kind} {variant}: SKIPPED ({e})")
                     continue

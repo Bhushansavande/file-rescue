@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.1]: 2026-10-29
+
+### Fixed (found by fuzzing and stress tests)
+- MKV/WebM live recordings (unknown-size segments): trailing junk could be taken as part of the file; only valid element ids are accepted now.
+- NTFS: a damaged MFT size or run list could make the scan run for minutes or crash; reads are now bounded.
+- exFAT/FAT: a damaged directory size could make the scan hang; directory reads are capped.
+- Reading at negative or impossible offsets no longer raises; devices that raise an error at their end (Windows) are treated as the end.
+
+### Added
+- Fuzz phase in the real file-system test (damaged NTFS/exFAT/FAT32 images must never crash or hang).
+
 ## [0.2.0]: 2026-10-29
 
 ### Added

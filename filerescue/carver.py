@@ -24,7 +24,12 @@ PARTIAL_CAP = 64 * 1024 * 1024   # largest "partial" file we will write when no 
 def _read_exact(f, n):
     parts, got = [], 0
     while got < n:
-        b = f.read(n - got)
+        try:
+            b = f.read(n - got)
+        except PermissionError:
+            raise
+        except OSError:
+            break              # e.g. Windows raises instead of returning "" when a device ends
         if not b:
             break
         parts.append(b)
@@ -34,8 +39,8 @@ def _read_exact(f, n):
 
 def read_at(f, offset, length):
     """Read from any offset. Raw devices require sector-aligned I/O; that is handled here."""
-    if length <= 0:
-        return b""
+    if length <= 0 or offset < 0 or offset > (1 << 60):
+        return b""            # a damaged structure can point before the start of the drive
     start = offset - offset % SECTOR
     end = offset + length
     end += (-end) % SECTOR

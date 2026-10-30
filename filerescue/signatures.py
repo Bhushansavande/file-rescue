@@ -43,6 +43,23 @@ SIGNATURES = [
               max_size=1024 * MB),
     Signature("TIFF / RAW (little-endian)", "tiff", b"II*\x00", "walker", walker="tiff_walk",
               strict=True, max_size=200 * MB),
+    Signature("FLAC", "flac", b"fLaC", "walker", walker="flac_walk", max_size=500 * MB),
+    Signature("MP3 (no ID3 tag)", "mp3raw", b"\xff\xfb", "walker", walker="mp3raw_walk",
+              strict=True, max_size=60 * MB),
+    Signature("MP3 (no ID3 tag)", "mp3raw", b"\xff\xfa", "walker", walker="mp3raw_walk",
+              strict=True, max_size=60 * MB),
+    Signature("MP3 MPEG-2 (no ID3 tag)", "mp3raw", b"\xff\xf3", "walker", walker="mp3raw_walk",
+              strict=True, max_size=60 * MB),
+    Signature("MP3 MPEG-2 (no ID3 tag)", "mp3raw", b"\xff\xf2", "walker", walker="mp3raw_walk",
+              strict=True, max_size=60 * MB),
+    Signature("AAC (ADTS)", "aac", b"\xff\xf1", "walker", walker="aac_walk", strict=True,
+              max_size=100 * MB),
+    Signature("AAC (ADTS)", "aac", b"\xff\xf9", "walker", walker="aac_walk", strict=True,
+              max_size=100 * MB),
+    Signature("FLV video", "flv", b"FLV\x01", "walker", walker="flv_walk", strict=True,
+              max_size=2048 * MB),
+    Signature("Legacy Office (DOC/XLS/PPT)", "ole", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "walker",
+              walker="ole_walk", max_size=300 * MB),
     Signature("TIFF / RAW (big-endian)", "tiff", b"MM\x00*", "walker", walker="tiff_walk",
               strict=True, max_size=200 * MB),
 ]
@@ -61,6 +78,8 @@ EXT_CATEGORY = {
     "apk": "apps",
     "pdf": "documents", "docx": "documents", "xlsx": "documents", "pptx": "documents",
     "sqlite": "databases",
+    "doc": "documents", "xls": "documents", "ppt": "documents", "msg": "documents", "ole": "documents",
+    "flac": "music", "aac": "music", "flv": "videos",
     "zip": "archives", "7z": "archives",
 }
 
@@ -76,13 +95,15 @@ TYPE_EXTS = {
     "cr2": {"cr2"}, "dng": {"dng"}, "nef": {"nef"}, "arw": {"arw"},
     "mkv": {"mkv"}, "webm": {"webm"}, "ogv": {"ogv"}, "opus": {"opus"}, "ogg": {"ogg"},
     "sqlite": {"sqlite"}, "db": {"sqlite"}, "7z": {"7z"},
+    "flac": {"flac"}, "aac": {"aac"}, "flv": {"flv"}, "doc": {"doc"}, "xls": {"xls"}, "ppt": {"ppt"},
+    "msg": {"msg"},
     "raw": {"cr2", "dng", "nef", "arw", "tif"},
     "photos": {"jpg", "png", "gif", "webp", "heic", "avif", "bmp", "tif", "cr2", "dng",
                "nef", "arw"},
-    "videos": {"mp4", "mov", "3gp", "avi", "mkv", "webm", "ogv"},
-    "music": {"mp3", "m4a", "wav", "opus", "ogg"},
+    "videos": {"mp4", "mov", "3gp", "avi", "mkv", "webm", "ogv", "flv"},
+    "music": {"mp3", "m4a", "wav", "opus", "ogg", "flac", "aac"},
     "apps": {"apk"},
-    "documents": {"pdf", "docx", "xlsx", "pptx"},
+    "documents": {"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "msg"},
     "databases": {"sqlite"},
 }
 
@@ -94,6 +115,7 @@ EXT_SIGNATURE = {
     "zip": "zip", "apk": "zip", "docx": "zip", "xlsx": "zip", "pptx": "zip",
     "heic": "mp4", "avif": "mp4", "bmp": "bmp", "7z": "7z", "sqlite": "sqlite",
     "mkv": "ebml", "webm": "ebml", "opus": "ogg", "ogg": "ogg", "ogv": "ogg",
+    "flac": "flac", "aac": "aac", "flv": "flv", "doc": "ole", "xls": "ole", "ppt": "ole", "msg": "ole",
     "tif": "tiff", "cr2": "tiff", "dng": "tiff", "nef": "tiff", "arw": "tiff",
 }
 
@@ -119,4 +141,6 @@ def select_signatures(types):
     if allowed is None:
         return list(SIGNATURES)
     needed = {EXT_SIGNATURE[e] for e in allowed}
+    if "mp3" in needed:
+        needed.add("mp3raw")          # bare MP3 files have no ID3 tag and their own signatures
     return [s for s in SIGNATURES if s.ext in needed]

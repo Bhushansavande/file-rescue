@@ -47,6 +47,27 @@ def need(tool):
         fail(f"Missing tool: {tool} (PATH={os.environ['PATH']})")
 
 
+def drop_flac_padding(path):
+    """ffmpeg adds an 8 KB all-zero PADDING block. ext4 stores zero blocks as holes, which would
+    split the file into pieces (a fragmentation test, not what this sample is for): remove it."""
+    with open(path, "rb") as f:
+        data = f.read()
+    pos, blocks = 4, []
+    while True:
+        hdr = data[pos]
+        ln = int.from_bytes(data[pos + 1:pos + 4], "big")
+        blocks.append((hdr & 0x7F, data[pos + 4:pos + 4 + ln]))
+        pos += 4 + ln
+        if hdr & 0x80:
+            break
+    keep = [b for b in blocks if b[0] != 1]
+    out = b"fLaC"
+    for i, (t, body) in enumerate(keep):
+        out += bytes([t | (0x80 if i == len(keep) - 1 else 0)]) + len(body).to_bytes(3, "big") + body
+    with open(path, "wb") as f:
+        f.write(out + data[pos:])
+
+
 def make_media(d):
     from PIL import Image, ImageDraw, ImageFilter
 
@@ -118,6 +139,25 @@ def make_media(d):
     ff(*v, "testsrc2=size=320x240:rate=25", *v, "sine=frequency=450", "-t", "3", "-c:v", "libx264",
        "-pix_fmt", "yuv420p", "-c:a", "aac", p("movie.mkv"))
     ff(*v, "testsrc2=size=320x240:rate=25", "-t", "2", "-c:v", "libvpx", p("clip.webm"))
+    ff(*v, "sine=frequency=300:duration=15", "-c:a", "flac", p("song.flac"))
+    ff(*v, "anoisesrc=d=10:c=pink:r=44100", "-c:a", "flac", "-compression_level", "8", p("noise.flac"))
+    for name in ("song.flac", "noise.flac"):
+        drop_flac_padding(p(name))
+    ff(*v, "sine=frequency=500:duration=10", "-c:a", "aac", "-f", "adts", p("raw.aac"))
+    ff(*v, "sine=frequency=440:duration=20", "-c:a", "libmp3lame", "-b:a", "128k", "-write_xing", "0",
+       "-write_id3v2", "0", p("bare.mp3"))
+    ff(*v, "testsrc=size=320x240:rate=15", *v, "sine=duration=3", "-t", "3", "-c:v", "flv", "-c:a", "mp3",
+       "-f", "flv", p("clip.flv"))
+    try:
+        import xlwt
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("data")
+        for r_ in range(300):
+            for c_ in range(8):
+                ws.write(r_, c_, "row %d col %d" % (r_, c_))
+        wb.save(p("old_sheet.xls"))
+    except ImportError:
+        print("xlwt not installed: skipping the XLS sample")
     photo(900, 600, 30).save(p("scan.bmp"))
     photo(700, 500, 31).save(p("scan.tif"))
     try:

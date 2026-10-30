@@ -2,6 +2,8 @@
 
 import argparse
 import os
+import re
+import stat
 import sys
 
 from . import __version__
@@ -12,11 +14,39 @@ def _out(msg):
     print(msg, flush=True)
 
 
+def _same_drive(source, outdir):
+    """True when `outdir` is on the drive being recovered (that would overwrite deleted data)."""
+    try:
+        if os.name == "nt":
+            m = re.match(r"^\\\\\.\\([A-Za-z]):?$", source)
+            return bool(m) and os.path.splitdrive(os.path.abspath(outdir))[0].upper() == m.group(1).upper() + ":"
+        st = os.stat(source)
+        if stat.S_ISBLK(st.st_mode):
+            probe = outdir
+            while not os.path.exists(probe):
+                probe = os.path.dirname(probe) or "."
+            return os.stat(probe).st_dev == st.st_rdev
+    except OSError:
+        pass
+    return False
+
+
+def _refuse_same_drive(a):
+    if not getattr(a, "force", False) and _same_drive(a.source, a.output):
+        _out("Refusing to save recovered files onto the drive you are recovering from: new data "
+             "could overwrite the files you want back. Choose a folder on a different drive "
+             "(or add --force if you are sure).")
+        return True
+    return False
+
+
 def cmd_carve(a):
     from .carver import carve
 
     if not os.path.exists(a.source):
         _out(f"Source not found: {a.source}")
+        return 2
+    if _refuse_same_drive(a):
         return 2
     total = os.path.getsize(a.source) if os.path.isfile(a.source) else 0
     last = {"mb": -1}
@@ -62,6 +92,8 @@ def cmd_undelete(a):
     if not os.path.exists(a.source):
         _out(f"Source not found: {a.source}")
         return 2
+    if a.output and _refuse_same_drive(a):
+        return 2
     with open(a.source, "rb", buffering=0) as f:
         vols = fs.open_filesystems(f)
         if not vols:
@@ -85,7 +117,7 @@ def cmd_undelete(a):
                 if e.status == "unsupported":
                     continue
                 top = [label.replace(" ", "_")] if label else []
-                dest = os.path.join(a.output, *top, *fs.safe_path(e.path))
+                dest = fs.safe_join(a.output, [*top, *fs.safe_path(e.path)])
                 fs.copy_entry(f, e, fs.unique_path(dest))
                 copied += 1
     if a.output:
@@ -176,6 +208,31 @@ def cmd_image(a):
     """Make a safe copy (image) of a raw device; unreadable parts are zero-filled."""
     chunk = 1024 * 1024
     done = 0
+    if not os.path.exists(a.source):
+        _out(f"Source not found: {a.source}")
+        return 2
+    dest_dir = os.path.dirname(os.path.abspath(a.dest))
+    if os.path.exists(a.dest):
+        same = False
+        try:
+            same = os.path.samefile(a.source, a.dest)
+        except OSError:
+            pass
+        if same:
+            _out("The destination is the same file as the source; that would destroy it. Aborting.")
+            return 2
+        mode = os.stat(a.dest).st_mode
+        if stat.S_ISBLK(mode) or stat.S_ISCHR(mode):
+            _out("The destination is a device, not a file. Aborting so no drive is overwritten.")
+            return 2
+        if not a.force:
+            _out(f"{a.dest} already exists. Use --force to overwrite it.")
+            return 2
+    if not os.path.isdir(dest_dir):
+        _out(f"Folder does not exist: {dest_dir}")
+        return 2
+    if _refuse_same_drive(argparse.Namespace(source=a.source, output=dest_dir, force=a.force)):
+        return 2
     with open(a.source, "rb", buffering=0) as src, open(a.dest, "wb") as dst:
         while True:
             try:
@@ -217,6 +274,8 @@ def build_parser():
                         "songs by 'Artist - Title' (ID3)")
     c.add_argument("--by-month", action="store_true",
                    help="sort files into YYYY-MM folders by their capture date")
+    c.add_argument("--force", action="store_true",
+                   help="allow saving onto the drive being recovered (not recommended)")
     c.add_argument("--no-report", action="store_true",
                    help="do not write report.html and recovered.csv")
     c.set_defaults(fn=cmd_carve)
@@ -225,6 +284,8 @@ def build_parser():
                                         "(FAT32, exFAT, NTFS)")
     u.add_argument("source", help="image, device or partition")
     u.add_argument("-o", "--output", help="recover here (a different drive than the source)")
+    u.add_argument("--force", action="store_true",
+                   help="allow saving onto the drive being recovered (not recommended)")
     u.add_argument("--all", action="store_true", help="also list files that were not deleted")
     u.add_argument("--include-overwritten", action="store_true",
                    help="also copy files whose space was reused (the content is probably wrong)")
@@ -252,6 +313,7 @@ def build_parser():
     i = sub.add_parser("image", help="create a safe image copy of a device")
     i.add_argument("source")
     i.add_argument("dest")
+    i.add_argument("--force", action="store_true", help="overwrite an existing destination file")
     i.set_defaults(fn=cmd_image)
     return p
 

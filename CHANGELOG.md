@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.2]: 2026-10-30
+
+### Security
+- `filerescue image` no longer truncates its destination before checking it: it refuses to overwrite the source, a device, or an existing file (without `--force`).
+- `carve`, `undelete` and the window refuse to save onto the drive being recovered (override: `--force`).
+- File names from untrusted drives and phones are sanitised (Windows device names, drive prefixes, control characters), and all writes are confined to the output folder, also against planted symlinks.
+- The window never opens executables, APKs, scripts or HTML from the results list; image previews have a pixel limit.
+- `recovered.csv` neutralises spreadsheet formulas (`=`, `+`, `-`, `@`).
+- Recycle Bin restore sanitises names and does not follow symlinks.
+- CI workflows run with read-only permissions; Dependabot keeps actions up to date; the Android app build fails if the INTERNET permission is ever requested.
+
 ## [0.2.1]: 2026-10-29
 
 ### Fixed (found by fuzzing and stress tests)

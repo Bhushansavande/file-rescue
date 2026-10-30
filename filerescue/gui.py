@@ -40,7 +40,19 @@ def list_drives():
     return drives
 
 
+# Only open file kinds that cannot run code. Recovered .exe/.apk/.bat/.js/.html come from an
+# untrusted drive and must never be launched by a button click.
+SAFE_OPEN = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "heic", "avif", "mp3", "m4a",
+             "wav", "opus", "ogg", "mp4", "mov", "3gp", "mkv", "webm", "avi", "pdf", "txt"}
+
+
+def can_open(path):
+    return os.path.isdir(path) or path.rsplit(".", 1)[-1].lower() in SAFE_OPEN
+
+
 def open_path(path):
+    if not can_open(path):
+        return
     try:
         if os.name == "nt":
             os.startfile(path)  # noqa: S606
@@ -215,7 +227,13 @@ class App:
     def open_selected(self):
         sel = self.tree.selection()
         if sel and self.items.get(sel[0], {}).get("file"):
-            open_path(self.items[sel[0]]["file"])
+            path = self.items[sel[0]]["file"]
+            if can_open(path):
+                open_path(path)
+            else:
+                self.mb.showinfo("File Rescue", "For safety this kind of file is not opened from here. "
+                                 "Use 'Open folder' and scan it with antivirus first.")
+                open_path(os.path.dirname(path))
 
     def close(self):
         self.stop.set()
@@ -233,6 +251,12 @@ class App:
             return
         if not out:
             self.mb.showwarning("File Rescue", "Choose the folder where recovered files are saved.")
+            return
+        from .cli import _same_drive
+
+        if _same_drive(src, out):
+            self.mb.showwarning("File Rescue", "The output folder is on the drive you are recovering from. "
+                                "Saving there could overwrite the files you want back. Choose another drive.")
             return
         types = self.chosen_types()
         if not types:
@@ -394,6 +418,7 @@ class App:
             if ext in ("jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "heic", "avif"):
                 try:
                     from PIL import Image, ImageTk
+                    Image.MAX_IMAGE_PIXELS = 50_000_000     # refuse decompression bombs
                     if ext in ("heic", "avif"):
                         try:
                             import pillow_heif

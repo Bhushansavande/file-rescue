@@ -672,13 +672,33 @@ def open_filesystems(f):
     return out
 
 
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *{f"COM{i}" for i in range(1, 10)},
+             *{f"LPT{i}" for i in range(1, 10)}}
+
+
+def safe_name(name):
+    """One file or folder name that is safe to create on Windows, Linux and macOS."""
+    name = "".join("_" if c in '<>:"|?*\\/' or ord(c) < 32 else c for c in name).strip(" .")
+    if name in (".", ".."):
+        return ""
+    if name.split(".")[0].upper() in _RESERVED:        # CON, NUL, COM1 ... are devices on Windows
+        name = "_" + name
+    return name[:150]
+
+
 def safe_path(path):
-    parts = []
-    for p in path.split("/"):
-        p = "".join("_" if c in '<>:"|?*' or ord(c) < 32 else c for c in p).strip(" .")
-        if p and p not in (".", ".."):
-            parts.append(p[:150])
-    return parts or ["unnamed"]
+    parts = [safe_name(p) for p in path.split("/")]
+    return [p for p in parts if p] or ["unnamed"]
+
+
+def safe_join(root, parts):
+    """Join under `root` and refuse anything that would end up outside it."""
+    target = os.path.join(root, *parts)
+    base = os.path.realpath(root)
+    real = os.path.realpath(target)
+    if os.path.commonpath([base, real]) != base:
+        raise ValueError("refusing to write outside the output folder: " + target)
+    return target
 
 
 def copy_entry(f, entry, dest):

@@ -79,7 +79,10 @@ def restore(items, outdir):
     for it in items:
         if not it.data_path:
             continue
-        base = os.path.basename(it.original_path.replace("\\", "/")) or os.path.basename(it.data_path)
+        from .filesystems import safe_name
+
+        base = (safe_name(os.path.basename(it.original_path.replace("\\", "/")))
+                or safe_name(os.path.basename(it.data_path)) or "unnamed")
         target = os.path.join(outdir, base)
         i = 1
         while os.path.exists(target):
@@ -87,7 +90,7 @@ def restore(items, outdir):
             target = os.path.join(outdir, f"{stem}_{i}{ext}")
             i += 1
         if os.path.isdir(it.data_path):
-            shutil.copytree(it.data_path, target)
+            shutil.copytree(it.data_path, target, symlinks=True)
         else:
             shutil.copy2(it.data_path, target)
         done.append(target)

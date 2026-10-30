@@ -110,7 +110,10 @@ def find_trashed():
 def _place(paths, outdir, fetch, log=None):
     pulled = []
     for p in paths:
+        from .filesystems import safe_name
+
         name, _ = parse_trashed_name(os.path.basename(p))
+        name = safe_name(name) or "unnamed"
         folder = os.path.join(outdir, KIND_FOLDER.get(classify(p) or "trash", ""))
         os.makedirs(folder, exist_ok=True)
         target = os.path.join(folder, name)

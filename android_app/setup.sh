@@ -8,5 +8,10 @@ MANIFEST=android/app/src/main/AndroidManifest.xml
 if ! grep -q MANAGE_EXTERNAL_STORAGE "$MANIFEST"; then
   sed -i 's#<application#<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application#' "$MANIFEST"
 fi
+# The app works offline: the release manifest must not ask for network access.
+if grep -q "android.permission.INTERNET" "$MANIFEST"; then
+  echo "ERROR: the main manifest requests INTERNET; this app must stay offline" >&2
+  exit 1
+fi
 flutter pub get
 echo "Done. Build with: flutter build apk --release"

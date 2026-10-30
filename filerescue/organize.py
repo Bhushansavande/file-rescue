@@ -91,6 +91,12 @@ def organize(results, outdir, dedupe=False, date_names=False, by_month=False, lo
 
 # ---------------------------------------------------------------- reports
 
+def _cell(value):
+    """Stop spreadsheets from running formulas hidden in names or tags (=, +, -, @ ...)."""
+    value = str(value)
+    return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
 def write_csv(results, outdir):
     path = os.path.join(outdir, "recovered.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -98,9 +104,10 @@ def write_csv(results, outdir):
         w.writerow(["file", "type", "size_bytes", "complete", "offset", "taken", "title", "artist",
                     "sha256"])
         for r in results:
-            w.writerow([os.path.relpath(r.path, outdir).replace(os.sep, "/"), r.ext, r.size,
+            w.writerow([_cell(os.path.relpath(r.path, outdir).replace(os.sep, "/")), r.ext, r.size,
                         "yes" if r.complete else "partial", r.offset,
-                        f"{r.date:%Y-%m-%d %H:%M:%S}" if r.date else "", r.title, r.artist, r.sha256])
+                        f"{r.date:%Y-%m-%d %H:%M:%S}" if r.date else "", _cell(r.title),
+                        _cell(r.artist), r.sha256])
     return path
 
 

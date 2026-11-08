@@ -116,7 +116,7 @@ Stream<Found> scan(String root) async* {
   }
 }
 
-/// Copies [f] into [outRoot]/<kind folder>/ and returns the new path.
+/// Copies [f] into the `kind folder` under [outRoot] and returns the new path.
 Future<String> recover(Found f, String outRoot) async {
   final folder = Directory('$outRoot/${f.kind.folder}');
   await folder.create(recursive: true);

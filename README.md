@@ -21,10 +21,12 @@
 
 | You want to... | Use | Works on |
 |---|---|---|
-| Get back deleted files **with their original names and folders** | `filerescue undelete` | FAT32, exFAT, NTFS: SD cards, USB sticks, Windows disks |
+| Get back deleted files **with their original names and folders** | `filerescue undelete` | FAT32, exFAT, NTFS (SD cards, USB sticks, Windows disks) and ext2/3/4 (Linux, Android SD cards; via the journal) |
 | Find files by content when the file system is gone, formatted or damaged | `filerescue carve` | Any drive, card or disk image |
 | Restore from the Windows Recycle Bin | `filerescue recyclebin` | Windows |
 | Save phone **trash, WhatsApp statuses and thumbnails** | `filerescue android` | Android (USB with adb, or on the phone with Termux) |
+| Continue a big scan that was interrupted | `filerescue carve --resume` | Progress is saved in the output folder |
+| Join photos/videos that were stored in two pieces | `filerescue carve --fragments` | JPEG (needs Pillow) and MP4/MOV |
 | Make a safe copy of a failing card first | `filerescue image` | Any drive |
 | Do it all from a window | `filerescue gui` | Windows, Linux, macOS |
 
@@ -42,7 +44,7 @@ Recoveries come with a browsable report (`report.html`: thumbnails, audio and vi
 
 Excellent tools already exist. **PhotoRec/TestDisk** is the gold standard for carving and supports far more formats; use it for critical data. File Rescue is built for something different:
 
-- **Names and folders back, in a window:** `undelete` reads FAT32, exFAT and NTFS directly, so recovered files keep their names, and it tells you honestly which ones are `intact` and which were `overwritten`.
+- **Names and folders back, in a window:** `undelete` reads FAT32, exFAT, NTFS and ext2/3/4 directly, so recovered files keep their names, and it tells you honestly which ones are `intact` and which were `overwritten`.
 - **Phone-aware:** WhatsApp statuses, voice notes, databases, trash and thumbnails: the things people actually lose on phones.
 - **Small and readable:** pure Python you can read, learn from and extend. [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) explains every step.
 - **Honest about limits:** partial files are flagged; the docs explain TRIM, encryption and fragmentation instead of promising miracles.
@@ -89,10 +91,12 @@ Done: 9 complete, 0 partial -> recovered
 
 - **SSDs and modern phones** use TRIM, which really erases deleted data quickly; neither method can help there. A phone's internal storage is encrypted, so only the trash, status and thumbnail folders are reachable without root.
 - **Carving** cannot restore names or folders (the file system lost them); **undelete** can, as long as the directory entry survives. On FAT, a file whose name fits the old 8.3 form loses its first letter when deleted (`_iny.txt`).
-- **Fragmented files** may come back incomplete. Carving reads from the start to where the file's own structure ends; `undelete` on FAT/exFAT assumes the file was stored in one piece. "Complete" means the structure was read to a clean end, not that every byte is guaranteed; open important recoveries to check them.
+- **Fragmented files** may come back incomplete. Carving reads from the start to where the file's own structure ends; `undelete` on FAT/exFAT assumes the file was stored in one piece. `--fragments` can join **two** pieces of a JPEG (needs Pillow) or an MP4/MOV, only when the result passes checks; it needs the right `--cluster-size`, and a photo it cannot prove is left partial.
+- **ext4 undelete** depends on the journal: the kernel erases a deleted file's block list, so File Rescue reads old copies from the journal, which only holds recent changes. Files deleted long ago, empty files, and files with holes may not come back; use carving then.
+- **Integrity check:** every recovered file is checked (PNG checksums, ZIP members, MP4 index, PDF end, long runs of zeros, and a full decode of photos if Pillow is installed). Problems are marked `suspect` in the report and CSV. Passing is not a guarantee. "Complete" means the structure was read to a clean end, not that every byte is guaranteed; open important recoveries to check them.
 - **NTFS** files that are compressed, encrypted, or spread over attribute lists are listed but not recovered.
 - Files with no recognizable end are saved as `_partial` (capped at 64 MB). RAW support is experimental: files end at the last byte their metadata refers to.
-- MP3 detection covers songs that start with an `ID3` tag. Encrypted WhatsApp backups (`.crypt14`) cannot be opened without your key.
+- Also recovered: MP3 without ID3 tags, AAC, FLAC, FLV, and old Office files (DOC, XLS, PPT, MSG). Encrypted WhatsApp backups (`.crypt14`) cannot be opened without your key.
 - Tested heavily on disk images and on virtual NTFS/exFAT/FAT32/ext4 volumes, **not yet on many physical cards and phones**. Reports from real hardware are very welcome.
 
 ## Development
@@ -100,7 +104,7 @@ Done: 9 complete, 0 partial -> recovered
 ```bash
 python -m unittest discover -s tests -v   # unit tests, no extra tools needed
 python scripts/realworld_test.py           # real media on FAT32/ext4 (needs ffmpeg, mtools, e2fsprogs, pillow)
-python scripts/realworld_fs_test.py        # undelete on FAT32/exFAT/NTFS (needs root, ntfs-3g, exfat-fuse)
+python scripts/realworld_fs_test.py        # undelete on FAT32/exFAT/NTFS/ext4 (needs root, ntfs-3g, exfat-fuse)
 ```
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned and [CONTRIBUTING.md](CONTRIBUTING.md) to help; adding a new file type takes about 30 lines plus a test.

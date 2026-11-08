@@ -443,3 +443,49 @@ class DamagedInput(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScanResume(CarveBase):
+    def test_interrupted_scan_continues_and_gives_same_result(self):
+        files = [make_png(self.rng) for i in range(6)]
+        parts = []
+        for fdata in files:
+            parts += [fdata, b"\0" * (3 * 1024 * 1024 - len(fdata))]
+        img = self.image(b"".join(parts))
+        src = os.path.join(self.tmp, "big.img")
+        with open(src, "wb") as fh:
+            fh.write(img)
+        old = carver.CHECKPOINT_EVERY
+        carver.CHECKPOINT_EVERY = 1
+        self.addCleanup(lambda: setattr(carver, "CHECKPOINT_EVERY", old))
+        seen = []
+
+        def stop_after_two_chunks():
+            seen.append(1)
+            return len(seen) > 1
+
+        out = os.path.join(self.tmp, "out")
+        with self.assertRaises(carver.Cancelled):
+            carve(src, out, cancel=stop_after_two_chunks)
+        self.assertTrue(os.path.exists(os.path.join(out, carver.STATE_NAME)))
+        logs = []
+        res = carve(src, out, resume=True, log=logs.append)
+        self.assertTrue(any("Resuming the scan" in l for l in logs))
+        self.assertEqual(len(res), 6)
+        for fdata in files:
+            self.assert_recovered(fdata, res)
+        self.assertFalse(os.path.exists(os.path.join(out, carver.STATE_NAME)))
+
+    def test_resume_ignored_for_other_settings(self):
+        img = self.image(make_png(self.rng))
+        src = os.path.join(self.tmp, "a.img")
+        with open(src, "wb") as fh:
+            fh.write(img)
+        out = os.path.join(self.tmp, "out")
+        os.makedirs(out)
+        with open(os.path.join(out, carver.STATE_NAME), "w") as fh:
+            fh.write('{"ident": {"source": "other"}, "phase": "scan", "pos": 99, "hits": []}')
+        logs = []
+        res = carve(src, out, resume=True, log=logs.append)
+        self.assertEqual(len(res), 1)
+        self.assertTrue(any("starting from the beginning" in l for l in logs))

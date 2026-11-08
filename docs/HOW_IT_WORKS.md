@@ -44,3 +44,13 @@ Android keeps some deleted things on purpose: the gallery trash (`.trashed-*`, a
 ## Why read-only matters
 
 Every recovery step only **reads** the source. If the tool wrote anything to the drive you are rescuing, it could destroy the very data you want back.
+
+## ext4 undelete and the journal
+
+On FAT and NTFS, deleting a file marks its entry as free but leaves the block list in place. ext3/ext4 also **zeroes the file's extent list and size** in the inode, and the kernel zeroes the name in the directory block. What survives is the journal (jbd2): before changing a metadata block, ext4 writes a copy of it into the journal. File Rescue reads the journal's descriptor blocks, finds old copies of the inode-table block that held the file's inode (with its extents still intact) and of the directory block that held its name, then rebuilds the entry. Limits: only recent changes are in the journal, and files with sparse holes or no size recorded cannot be rebuilt.
+
+## Resume, integrity and fragments
+
+* **Resume:** while scanning, the list of candidate file starts and the position are written to `.filerescue_resume.json` in the output folder (every 256 MB, on Ctrl+C, and during extraction). `--resume` loads it only if the drive, size and options match.
+* **Integrity check** (`integrity.py`): a recovered file is verified with cheap checks per format and, with Pillow, a full decode. A failure is labelled `suspect` with the reason.
+* **Fragments** (`fragments.py`): for a JPEG, it finds a stray end-of-image marker, grows a second piece backwards from it, and accepts the join only if the picture decodes completely and shows no visible seam. For MP4 it locates the `moov` box, reads the sample table, and chooses the piece boundary so every sampled video sample starts with a valid length-prefixed NAL unit.

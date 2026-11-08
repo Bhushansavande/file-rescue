@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from urllib.parse import quote
 
-from . import __version__
+from . import __version__, integrity
 from .metadata import read_info
 
 _BAD = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -50,6 +50,7 @@ def organize(results, outdir, dedupe=False, date_names=False, by_month=False, lo
     kept, seen, removed = [], {}, 0
     for r in results:
         r.sha256 = sha256_of(r.path)
+        r.suspect = integrity.check(r.path, r.ext, r.complete)
         info = read_info(r.path, r.ext)
         r.date, r.title, r.artist = info["date"], info["title"], info["artist"]
         if dedupe and r.complete:
@@ -102,12 +103,12 @@ def write_csv(results, outdir):
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["file", "type", "size_bytes", "complete", "offset", "taken", "title", "artist",
-                    "sha256"])
+                    "check", "problem", "sha256"])
         for r in results:
             w.writerow([_cell(os.path.relpath(r.path, outdir).replace(os.sep, "/")), r.ext, r.size,
                         "yes" if r.complete else "partial", r.offset,
                         f"{r.date:%Y-%m-%d %H:%M:%S}" if r.date else "", _cell(r.title),
-                        _cell(r.artist), r.sha256])
+                        _cell(r.artist), "suspect" if r.suspect else "ok", _cell(r.suspect), r.sha256])
     return path
 
 
@@ -157,8 +158,12 @@ def write_report(results, outdir, source=""):
         label = " - ".join(x for x in (r.artist, r.title) if x) or os.path.basename(rel)
         extra = f"{r.date:%Y-%m-%d %H:%M}" if r.date else ""
         state = '' if r.complete else ' <span class="partial">partial: may be damaged</span>'
+        if r.joined:
+            state += ' <span class="stat">joined from 2 pieces</span>'
+        if r.suspect:
+            state += f' <span class="partial" title="{html.escape(r.suspect)}">suspect: {html.escape(r.suspect)}</span>'
         cards.append(
-            f'<div class="item" data-cat="{html.escape(top)}" data-partial="{0 if r.complete else 1}">'
+            f'<div class="item" data-cat="{html.escape(top)}" data-partial="{0 if r.complete and not r.suspect else 1}">'
             f'<div class="media">{_media_html(r, rel)}</div>'
             f'<div class="meta"><a href="{quote(rel)}">{html.escape(label)}</a>'
             f'<small>{r.ext.upper()} · {_size(r.size)}{" · " + extra if extra else ""}{state}</small></div></div>')
@@ -166,14 +171,15 @@ def write_report(results, outdir, source=""):
     complete = sum(1 for r in results if r.complete)
     buttons = ['<button class="btn on" data-f="all">All</button>'] + \
         [f'<button class="btn" data-f="{html.escape(t)}">{html.escape(t)}</button>' for t in tops] + \
-        ['<button class="btn" data-f="__partial">Partial only</button>']
+        ['<button class="btn" data-f="__partial">Partial / suspect</button>']
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>File Rescue report</title><style>{_CSS}</style></head><body><main>
 <h1>File Rescue report</h1>
 <p class="sub">{html.escape(source)} · {datetime.now():%Y-%m-%d %H:%M} · File Rescue {__version__}</p>
 <div class="stats"><span class="stat">{len(results)} files</span><span class="stat">{complete} complete</span>
-<span class="stat">{len(results) - complete} partial</span></div>
+<span class="stat">{len(results) - complete} partial</span>
+<span class="stat">{sum(1 for r in results if r.suspect)} suspect</span></div>
 <div class="stats">{''.join(buttons)}</div>
 <div class="grid">{''.join(cards) or '<p>No files were recovered.</p>'}</div>
 <p class="sub">Open this file from the recovery folder so the previews can load. Partial files may be incomplete.

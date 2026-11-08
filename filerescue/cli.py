@@ -64,7 +64,8 @@ def cmd_carve(a):
     _out(f"Scanning {a.source} (read-only; the source is never modified)")
     try:
         res = carve(a.source, a.output, types=types, aligned=not a.no_align,
-                    keep_partial=not a.no_partial, progress=progress, log=_out)
+                    keep_partial=not a.no_partial, progress=progress, log=_out,
+                    resume=a.resume, fragments=a.fragments, cluster=a.cluster_size)
     except ValueError as e:
         print(file=sys.stderr)
         _out(str(e))
@@ -81,6 +82,11 @@ def cmd_carve(a):
     full = sum(1 for r in res if r.complete)
     extra = f", {removed} duplicates removed" if removed else ""
     _out(f"\nDone: {full} complete, {len(res) - full} partial{extra} -> {os.path.abspath(a.output)}")
+    bad = [r for r in res if r.suspect and r.complete]
+    if bad:
+        _out(f"{len(bad)} complete-looking files failed the integrity check (marked 'suspect' in the report):")
+        for r in bad[:10]:
+            _out(f"  {os.path.relpath(r.path, a.output)}: {r.suspect}")
     if res and not a.no_report:
         _out(f"Open {os.path.join(os.path.abspath(a.output), 'report.html')} in a browser to look through the results.")
     return 0
@@ -97,7 +103,7 @@ def cmd_undelete(a):
     with open(a.source, "rb", buffering=0) as f:
         vols = fs.open_filesystems(f)
         if not vols:
-            _out("No FAT, exFAT or NTFS file system found. Use 'filerescue carve' for other "
+            _out("No FAT, exFAT, NTFS or ext2/3/4 file system found. Use 'filerescue carve' for other "
                  "file systems or damaged drives.")
             return 1
         total = copied = 0
@@ -118,8 +124,12 @@ def cmd_undelete(a):
                     continue
                 top = [label.replace(" ", "_")] if label else []
                 dest = fs.safe_join(a.output, [*top, *fs.safe_path(e.path)])
-                fs.copy_entry(f, e, fs.unique_path(dest))
+                done = fs.copy_entry(f, e, fs.unique_path(dest))
                 copied += 1
+                from . import integrity
+                why = integrity.check(done, os.path.splitext(done)[1].lstrip(".").lower())
+                if why:
+                    _out(f"      suspect: {why}")
     if a.output:
         _out(f"\nRecovered {copied} of {total} files -> {os.path.abspath(a.output)}")
     else:
@@ -266,6 +276,13 @@ def build_parser():
     c.add_argument("--no-align", action="store_true",
                    help="also look for files that do not start on a sector boundary "
                         "(slower, more false hits)")
+    c.add_argument("--resume", action="store_true",
+                   help="continue an interrupted scan of the same drive (progress is saved in the output folder)")
+    c.add_argument("--fragments", action="store_true",
+                   help="try to join JPEG photos and MP4 videos that were stored in two pieces (slower; "
+                        "JPEG needs Pillow)")
+    c.add_argument("--cluster-size", type=int, default=4096, metavar="BYTES",
+                   help="cluster size of the file system for --fragments (default 4096)")
     c.add_argument("--no-partial", action="store_true", help="skip partially recovered files")
     c.add_argument("--dedupe", action="store_true",
                    help="delete byte-identical duplicate files (the first copy is kept)")
@@ -281,7 +298,7 @@ def build_parser():
     c.set_defaults(fn=cmd_carve)
 
     u = sub.add_parser("undelete", help="list/recover deleted files WITH their names and folders "
-                                        "(FAT32, exFAT, NTFS)")
+                                        "(FAT32, exFAT, NTFS, ext4)")
     u.add_argument("source", help="image, device or partition")
     u.add_argument("-o", "--output", help="recover here (a different drive than the source)")
     u.add_argument("--force", action="store_true",

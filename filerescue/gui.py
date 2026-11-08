@@ -139,6 +139,9 @@ class App:
             row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Checkbutton(opts, text="Name by date / song title (deep scan)", variable=self.datenames).grid(
             row=4, column=2, columnspan=2, sticky="w", pady=(6, 0))
+        self.fragments = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="Join photos/videos stored in two pieces (slower)",
+                        variable=self.fragments).grid(row=5, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         bar = ttk.Frame(root, padding=(10, 8))
         bar.pack(fill="x")
@@ -283,13 +286,13 @@ class App:
             self.q.put(("status", "Scanning (deep scan reads the whole drive)..."))
             res = carve(src, out, types=types, aligned=True,
                         progress=lambda pos: self.q.put(("progress", pos * 100 / total if total else 0)),
-                        cancel=self.stop.is_set)
+                        cancel=self.stop.is_set, fragments=self.fragments.get())
             self.q.put(("status", "Sorting results and writing the report..."))
             res, removed = org.organize(res, out, dedupe=self.dedupe.get(), date_names=self.datenames.get())
             org.write_report(res, out, os.path.basename(src))
             for r in res:
                 self.q.put(("item", {"name": os.path.relpath(r.path, out), "size": r.size,
-                                     "state": "complete" if r.complete else "partial",
+                                     "state": "suspect" if r.suspect else ("complete" if r.complete else "partial"),
                                      "date": f"{r.date:%Y-%m-%d}" if r.date else "", "file": r.path}))
             msg = f"Done: {len(res)} files recovered" + (f", {removed} duplicates removed" if removed else "")
             self.q.put(("done", msg + ". Open the report to browse them."))

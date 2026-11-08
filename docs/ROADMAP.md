@@ -24,10 +24,13 @@ Help anyone recover deleted photos, videos, music and APKs using **free and open
 ## Next
 
 ### v0.3: harder recovery
-- [ ] Fragmented files: join pieces using file-system hints and format checks
-- [ ] ext4 and APFS undelete (names via journal / snapshots)
-- [ ] MP3 without ID3, AAC, FLAC, FLV, legacy Office (DOC/XLS)
-- [ ] Resume an interrupted scan
+- [x] Fragmented JPEG and MP4 joined from two pieces (`--fragments`); more than two pieces: not yet
+- [x] ext4 undelete with names, via the journal
+- [ ] APFS undelete (snapshots)
+- [x] MP3 without ID3, AAC, FLAC, FLV, legacy Office (DOC/XLS/PPT)
+- [x] Resume an interrupted scan (`--resume`)
+- [x] Integrity check that marks suspect files
+- [x] Step-by-step guide website (`site/`, GitHub Pages)
 
 ### v0.4: more apps
 - [ ] Decrypt WhatsApp backups with the user's own key (read-only helper)
@@ -58,5 +61,5 @@ Help anyone recover deleted photos, videos, music and APKs using **free and open
 |---|---|
 | v0.1 | CLI, main types, Recycle Bin, Android trash ✅ |
 | v0.2 | Window, undelete with names, more formats, report, Android app ✅ |
-| v0.3 | Fragmented files, ext4, more audio/office types |
+| v0.3 | Fragmented files, ext4, more audio/office types, resume, integrity check, guide website ✅ |
 | v1.0 | Stable and tested on real hardware at scale |

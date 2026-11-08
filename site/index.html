@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>I deleted a file. What now? - File Rescue guide</title>
+<meta name="description" content="Step-by-step guide for getting back deleted photos, videos and files from a phone, PC or SD card. Free, no sign-up, nothing leaves your device.">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#17202a;--mute:#5b6773;--line:#dfe3e8;--accent:#1f6feb;--warn:#b54708;--warnbg:#fff4e5;--ok:#067647;--okbg:#e7f6ee}
+@media (prefers-color-scheme:dark){:root{--bg:#10151b;--card:#18202a;--ink:#e8edf2;--mute:#9aa7b4;--line:#2a3440;--accent:#5aa2ff;--warn:#f5b461;--warnbg:#2b2112;--ok:#5fd29b;--okbg:#10261c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.7rem;line-height:1.25;margin:.4em 0 .2em}
+h2{font-size:1.2rem;margin:0 0 .6em}
+p.lead{color:var(--mute);margin-top:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
+.stop{background:var(--warnbg);border-color:var(--warn);color:var(--ink)}
+.stop b{color:var(--warn)}
+.choices{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+button.choice{font:inherit;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer}
+button.choice:hover,button.choice:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
+button.choice small{display:block;color:var(--mute);margin-top:2px}
+button.link{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;padding:0;text-decoration:underline}
+ol.steps{padding-left:1.3em}ol.steps li{margin:.7em 0}
+code,pre{font-family:ui-monospace,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+code{padding:.05em .35em}pre{padding:10px 12px;overflow-x:auto;margin:.5em 0}
+.ok{background:var(--okbg);border-color:var(--ok)}
+.tag{display:inline-block;font-size:.8rem;border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--mute)}
+a{color:var(--accent)}
+footer{color:var(--mute);font-size:.9rem;margin-top:30px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>I deleted a file. What now?</h1>
+<p class="lead">A calm, step-by-step guide to getting photos, videos and documents back. Free. No sign-up. This page collects nothing: everything runs in your browser.</p>
+
+<div class="card stop">
+<h2>First, the one rule that matters</h2>
+<p><b>Stop using the device now.</b> A deleted file is usually still there until new data is written over it. Do not take new photos, install apps, copy files onto the same drive, or "clean up". Every new write lowers the chance of getting your file back.</p>
+<p>Also: <b>never save recovered files onto the same drive</b> you are recovering from.</p>
+</div>
+
+<section id="q1" class="card">
+<h2>1. Where were the files?</h2>
+<div class="choices">
+<button class="choice" data-go="phone">Android phone<small>Gallery, WhatsApp, internal storage</small></button>
+<button class="choice" data-go="card">SD card / pen drive / camera card<small>Removable storage</small></button>
+<button class="choice" data-go="pc">Windows computer<small>Hard disk or SSD</small></button>
+<button class="choice" data-go="linux">Linux computer or Linux/Android SD card<small>ext2 / ext3 / ext4</small></button>
+</div>
+</section>
+
+<section id="phone" class="card" hidden>
+<h2>Android phone: try the easy places first</h2>
+<ol class="steps">
+<li><b>Gallery / Google Photos trash.</b> Open the app, then <i>Library &rarr; Bin / Trash</i>. Deleted items stay about 30-60 days. Select and tap <i>Restore</i>.</li>
+<li><b>Files app trash.</b> Many phones keep a <i>Recycle bin</i> (Files &rarr; menu &rarr; Recycle bin).</li>
+<li><b>Hidden trash files.</b> Android 11+ renames deleted files to <code>.trashed-...</code> for about 30 days. File Rescue can find these, plus WhatsApp statuses and thumbnails, even if the app trash was emptied.</li>
+<li><b>Not found?</b> If the photos were on an SD card, take the card out and follow the <button class="link" data-go="card">SD card steps</button>.</li>
+</ol>
+<p>To use File Rescue on the phone itself, install the free Android app from the <a href="https://github.com/Bhushansavande/file-rescue/releases">Releases page</a>. It needs no internet permission.</p>
+<p><button class="link" data-go="after">Next: after recovery</button> &middot; <button class="link" data-go="q1">Back</button></p>
+</section>
+
+<section id="card" class="card" hidden>
+<h2>SD card or pen drive: you need a computer</h2>
+<ol class="steps">
+<li><b>Remove the card</b> from the phone/camera right away and do not put it back.</li>
+<li>Plug it into a computer with a card reader or USB adapter. <b>If Windows asks to "format" it, click Cancel.</b></li>
+<li>Download <b>File Rescue</b> (free, open source) from the <a href="https://github.com/Bhushansavande/file-rescue/releases">Releases page</a>. On Windows, take <code>FileRescue-gui.exe</code>: no install, no command line.</li>
+<li>Open it, choose the card, tick <i>Photos</i> / <i>Videos</i> and press <b>Scan</b>. Pick a folder on your <b>computer</b> (not on the card) for the results.</li>
+<li>If the card is FAT32 or exFAT, use <b>Undelete</b> first: the "Undelete" mode brings files back <b>with their original names and folders</b>. If names are gone or the card was formatted, use the <b>Deep scan</b>: it finds files by their content, without names.</li>
+</ol>
+<p><span class="tag">Tip</span> Big card? A deep scan can take hours. It saves progress, so on the command line you can stop (Ctrl+C) and continue later with <code>--resume</code>.</p>
+<p><button class="link" data-go="after">Next: after recovery</button> &middot; <button class="link" data-go="q1">Back</button></p>
+</section>
+
+<section id="pc" class="card" hidden>
+<h2>Windows computer</h2>
+<ol class="steps">
+<li><b>Check the Recycle Bin</b> first. Right-click a file &rarr; <i>Restore</i>. File Rescue can also restore from the Recycle Bin for you.</li>
+<li><b>Check backups:</b> <i>File History</i>, OneDrive/Google Drive trash, or "Previous versions" (right-click the folder &rarr; Properties).</li>
+<li>If the files were on the <b>C: drive</b>, stop using the computer as much as possible. Better still, shut it down and connect the drive to another computer, or run File Rescue from a pen drive.</li>
+<li>Run <code>FileRescue-gui.exe</code> from a <b>different drive</b> than the one you are scanning. Choose the drive, press <b>Scan</b>, save results on another drive.</li>
+<li><b>NTFS</b> drives support Undelete (names and folders kept). SSDs often erase deleted data quickly (TRIM), so results can be limited.</li>
+</ol>
+<p><button class="link" data-go="after">Next: after recovery</button> &middot; <button class="link" data-go="q1">Back</button></p>
+</section>
+
+<section id="linux" class="card" hidden>
+<h2>Linux, or a Linux/Android SD card (ext2/3/4)</h2>
+<ol class="steps">
+<li>Unmount the drive so nothing writes to it: <pre>sudo umount /dev/sdX1</pre></li>
+<li>Install File Rescue: <pre>pip install git+https://github.com/Bhushansavande/file-rescue.git</pre></li>
+<li>Try undelete with names (works while the file system journal still holds the old entries): <pre>sudo filerescue undelete /dev/sdX1 -o ~/recovered</pre></li>
+<li>If that finds nothing, run the content-based deep scan: <pre>sudo filerescue carve /dev/sdX1 -o ~/recovered --types photos,videos</pre></li>
+</ol>
+<p><span class="tag">Honest note</span> On ext4, deleting wipes the file's block list. File Rescue rebuilds it from the journal, which only keeps recent history, so act quickly.</p>
+<p><button class="link" data-go="after">Next: after recovery</button> &middot; <button class="link" data-go="q1">Back</button></p>
+</section>
+
+<section id="after" class="card ok" hidden>
+<h2>After recovery: check your files</h2>
+<ol class="steps">
+<li>Open the <b>report.html</b> that File Rescue writes in the results folder. It shows thumbnails and sizes.</li>
+<li>Files marked <b>suspect</b> or <b>partial</b> are probably damaged (for example, half of a photo was overwritten). Look at those first and do not expect all of them to open.</li>
+<li>Copy the files you want to a safe place, and make a <b>second backup</b> (cloud or another drive).</li>
+<li>Only then use the old drive normally again.</li>
+</ol>
+<p><button class="link" data-go="q1">Start again</button></p>
+</section>
+
+<div class="card">
+<h2>Things that do not work (so you do not waste time)</h2>
+<ul>
+<li>Files overwritten by newer data cannot be recovered by any software.</li>
+<li>Most modern phones encrypt internal storage: a deep scan of the internal memory is not possible without root. The trash and thumbnail methods above are the realistic options.</li>
+<li>Be careful with "recover everything" apps that ask for payment first. File Rescue is free and open source (MIT).</li>
+</ul>
+</div>
+
+<footer>
+File Rescue is free, open source (MIT) and works offline. <a href="https://github.com/Bhushansavande/file-rescue">Source code and downloads</a> &middot; <a href="https://github.com/Bhushansavande/file-rescue/issues">Report a problem</a>
+</footer>
+</main>
+<script>
+(function(){
+  var ids=["q1","phone","card","pc","linux","after"];
+  function show(id){
+    ids.forEach(function(x){var e=document.getElementById(x);if(e)e.hidden=(x!==id);});
+    try{history.replaceState(null,"","#"+id);}catch(e){}
+    var t=document.getElementById(id);if(t&&t.scrollIntoView)t.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+  document.addEventListener("click",function(ev){
+    var b=ev.target.closest("[data-go]");if(b){show(b.getAttribute("data-go"));}
+  });
+  var h=(location.hash||"").slice(1);if(ids.indexOf(h)>0)show(h);
+})();
+</script>
+</body>
+</html>

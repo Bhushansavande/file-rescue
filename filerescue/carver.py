@@ -6,9 +6,12 @@ types inside the raw data, measures where each file ends, and copies it out.
 The source is only ever read (read-only); nothing is written to it.
 """
 
+import json
 import os
+import struct
+import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from . import formats
 from .signatures import (EXT_CATEGORY, RIFF_TYPES, SIGNATURES, allowed_extensions,
@@ -55,31 +58,48 @@ class Cancelled(Exception):
     """Raised when the caller asks a running scan to stop."""
 
 
-def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK, cancel=None):
-    """Find all candidate file starts. Returns [(offset, Signature), ...] in order."""
+CHECKPOINT_EVERY = 256 * 1024 * 1024     # save scan progress about every 256 MB
+
+
+def scan(f, sigs, aligned=True, progress=None, chunk=CHUNK, cancel=None,
+         start=0, hits=None, checkpoint=None):
+    """Find all candidate file starts. Returns [(offset, Signature), ...] in order.
+
+    `start` and `hits` continue an earlier scan; `checkpoint(pos, hits)` is called regularly."""
     reach = max(s.header_offset + len(s.header) for s in sigs)
-    hits = {}
-    pos, carry = 0, b""
-    f.seek(0)
-    while True:
-        data = _read_exact(f, chunk)
-        if not data:
-            break
-        buf = carry + data
-        base = pos - len(carry)
-        for sig in sigs:
-            i = buf.find(sig.header)
-            while i != -1:
-                start = base + i - sig.header_offset
-                if start >= 0 and start not in hits and (not aligned or start % SECTOR == 0):
-                    hits[start] = sig
-                i = buf.find(sig.header, i + 1)
-        pos += len(data)
-        carry = buf[-(reach - 1):] if reach > 1 else b""
-        if progress:
-            progress(pos)
-        if cancel and cancel():
-            raise Cancelled()
+    hits = {} if hits is None else hits
+    pos, carry = max(0, start - (reach - 1)), b""      # re-read a little so no header is cut in two
+    f.seek(pos)
+    next_save = pos + CHECKPOINT_EVERY
+    try:
+        while True:
+            data = _read_exact(f, chunk)
+            if not data:
+                break
+            buf = carry + data
+            base = pos - len(carry)
+            for sig in sigs:
+                i = buf.find(sig.header)
+                while i != -1:
+                    start = base + i - sig.header_offset
+                    if start >= 0 and start not in hits and (not aligned or start % SECTOR == 0):
+                        hits[start] = sig
+                    i = buf.find(sig.header, i + 1)
+            pos += len(data)
+            carry = buf[-(reach - 1):] if reach > 1 else b""
+            if progress:
+                progress(pos)
+            if checkpoint and pos >= next_save:
+                next_save = pos + CHECKPOINT_EVERY
+                checkpoint(pos, hits)
+            if cancel and cancel():
+                if checkpoint:
+                    checkpoint(pos, hits)
+                raise Cancelled()
+    except KeyboardInterrupt:
+        if checkpoint:
+            checkpoint(pos, hits)      # Ctrl+C keeps the progress
+        raise
     return sorted(hits.items())
 
 
@@ -178,7 +198,9 @@ def jpeg_length(f, off, limit):
         m = h[1]
         if m == 0xD9:
             return pos + 2 - off
-        if m == 0x01 or 0xD0 <= m <= 0xD8:
+        if m == 0xD8:
+            return None              # a second start-of-image inside a picture: another file begins here
+        if m == 0x01 or 0xD0 <= m <= 0xD7:
             pos += 2
             continue
         if len(h) < 4:
@@ -284,8 +306,8 @@ _MP4_BOXES = {b"ftyp", b"moov", b"mdat", b"free", b"skip", b"wide", b"uuid", b"m
               b"styp", b"sidx", b"pdin", b"meta", b"udta", b"junk", b"pnot", b"prft", b"emsg"}
 
 
-def mp4_length(f, off, limit):
-    """Add up the sizes of the top-level MP4 boxes."""
+def mp4_length(f, off, limit, need_index=True):
+    """Add up the sizes of the top-level MP4 boxes. A video needs its index (moov) to count as complete."""
     pos, saw_media = off, False
     while pos - off < limit:
         h = read_at(f, pos, 16)
@@ -301,8 +323,8 @@ def mp4_length(f, off, limit):
             size = int.from_bytes(h[8:16], "big")
         if size < 8 or pos - off + size > limit:
             break
-        if typ in (b"moov", b"mdat", b"moof"):
-            saw_media = True
+        if typ in (b"moov", b"moof") or (typ == b"mdat" and not need_index):
+            saw_media = True           # without the index a video cannot be played
         pos += size
     return pos - off if saw_media else None
 
@@ -395,7 +417,7 @@ def measure(f, off, sig, nxt, keep_partial=True):
             ext = "3gp"
         elif brand == b"M4A ":
             ext = "m4a"
-        length = mp4_length(f, off, limit)
+        length = mp4_length(f, off, limit, need_index=ext not in ("heic", "avif"))
     elif sig.kind == "walker":
         try:
             length, ext = getattr(formats, sig.walker)(
@@ -463,23 +485,129 @@ class Recovered:
     title: str = ""            # song title (ID3), when present
     artist: str = ""
     sha256: str = ""           # filled in by organize()
+    joined: bool = False       # rebuilt from two separate pieces on the drive (see fragments.py)
+    suspect: str = ""          # why the file looks damaged, "" if it looks fine (see integrity.py)
+
+
+def _join_fragments(source, results, cluster, log, cancel):
+    """Try to complete partial JPEG / MP4 results from pieces stored elsewhere on the drive."""
+    import bisect
+
+    from . import fragments as frag
+
+    todo = [r for r in results if not r.complete and r.ext in ("jpg", "mp4", "mov", "3gp")]
+    if not todo:
+        return
+    spans = sorted((r.offset, r.offset + r.size) for r in results if r.complete)
+    starts = [a for a, _ in spans]
+
+    def inside(off):
+        i = bisect.bisect_right(starts, off) - 1
+        return i >= 0 and spans[i][0] <= off < spans[i][1]
+
+    with open(source, "rb", buffering=0) as f:
+        ends = frag.find_all(f, b"\xff\xd9") if any(r.ext == "jpg" for r in todo) else []
+        moovs = frag.find_all(f, b"moov") if any(r.ext != "jpg" for r in todo) else []
+        for r in todo:
+            if cancel and cancel():
+                return
+            if log:
+                log(f"  trying to join the pieces of {os.path.basename(r.path)} ...")
+            try:
+                if r.ext == "jpg":
+                    data = frag.join_jpeg(f, r.offset, cluster, ends, inside)
+                else:
+                    data = frag.join_mp4(f, r.offset, cluster, moovs, inside)
+            except (OSError, ValueError, struct.error, MemoryError):
+                data = None
+            if not data:
+                continue
+            new = r.path.replace("_partial.", "_joined.")
+            with open(new, "wb") as out:
+                out.write(data)
+            if new != r.path:
+                os.remove(r.path)
+            r.path, r.size, r.complete, r.joined = new, len(data), True, True
+            if log:
+                log(f"    joined two pieces: {len(data):,} bytes -> {os.path.basename(new)}")
+
+
+STATE_NAME = ".filerescue_resume.json"
+
+
+def _load_state(path, ident):
+    """Saved progress of an interrupted scan of the same drive with the same settings, or None."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            st = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return st if isinstance(st, dict) and st.get("ident") == ident else None
+
+
+def _save_state(path, state):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    os.replace(tmp, path)
 
 
 def carve(source, outdir, types=None, aligned=True, keep_partial=True,
-          progress=None, log=None, cancel=None):
-    """Carve files out of `source` into `outdir`. Returns a list of Recovered."""
+          progress=None, log=None, cancel=None, resume=False,
+          fragments=False, cluster=4096):
+    """Carve files out of `source` into `outdir`. Returns a list of Recovered.
+
+    Progress is saved in `outdir` while scanning, so an interrupted scan of a big drive can be
+    continued with resume=True (same source, types and options)."""
     sigs = select_signatures(types)
     allowed = allowed_extensions(types)   # None = keep every type
     os.makedirs(outdir, exist_ok=True)
-    results = []
+    state_path = os.path.join(outdir, STATE_NAME)
+    names = {sg.name: sg for sg in sigs}
+    ident = {"source": os.path.abspath(source), "size": os.path.getsize(source) if os.path.isfile(source) else 0,
+             "types": sorted(names), "aligned": bool(aligned), "partial": bool(keep_partial)}
+    saved = _load_state(state_path, ident) if resume else None
+    if resume and saved is None and log:
+        log("No matching saved progress found: starting from the beginning.")
+    results, last_end, first_n = [], -1, 0
     with open(source, "rb", buffering=0) as f:
-        hits = scan(f, sigs, aligned=aligned, progress=progress, cancel=cancel)
-        if log:
+        hits = None
+        if saved and saved.get("phase") == "carve":
+            hits = [(int(o), names[nm]) for o, nm in saved["hits"] if nm in names]
+            results = [Recovered(**{**r, "date": None}) for r in saved["results"]
+                       if os.path.exists(r["path"])]
+            last_end, first_n = saved["last_end"], saved["n"]
+            if log:
+                log(f"Resuming: scan finished earlier, continuing at candidate {first_n:,} "
+                    f"({len(results)} files already recovered).")
+        else:
+            start, found = 0, {}
+            if saved:
+                start = saved["pos"]
+                found = {int(o): names[nm] for o, nm in saved["hits"] if nm in names}
+                if log:
+                    log(f"Resuming the scan at {start / 1048576:,.0f} MB ({len(found):,} candidates so far).")
+
+            def checkpoint(pos, current):
+                _save_state(state_path, {"ident": ident, "phase": "scan", "pos": pos,
+                                         "hits": [[o, sg.name] for o, sg in current.items()]})
+
+            hits = scan(f, sigs, aligned=aligned, progress=progress, cancel=cancel,
+                        start=start, hits=found, checkpoint=checkpoint)
+        if log and not saved:
             log(f"Candidate file starts found: {len(hits)}")
-        last_end = -1
+        hit_list = [[o, sg.name] for o, sg in hits]
+        last_save = time.monotonic()
         for n, (off, sig) in enumerate(hits):
+            if n < first_n:
+                continue
             if cancel and cancel():
                 break                      # stop, but keep what was recovered so far
+            if time.monotonic() - last_save > 30:
+                last_save = time.monotonic()
+                _save_state(state_path, {"ident": ident, "phase": "carve", "hits": hit_list, "n": n,
+                                         "last_end": last_end,
+                                         "results": [{**asdict(r), "date": None} for r in results]})
             if off < last_end:
                 continue  # candidate lies inside a file we already recovered
             nxt = hits[n + 1][0] if n + 1 < len(hits) else None
@@ -526,4 +654,11 @@ def carve(source, outdir, types=None, aligned=True, keep_partial=True,
             results.append(Recovered(path, off, size, ext, complete))
             if log:
                 log(f"  [{ext}] {size:>12,} bytes  {os.path.relpath(path, outdir)}")
+    if fragments and not (cancel and cancel()):
+        _join_fragments(source, results, cluster, log, cancel)
+    if not (cancel and cancel()):
+        try:
+            os.remove(state_path)           # finished: nothing to resume
+        except OSError:
+            pass
     return results

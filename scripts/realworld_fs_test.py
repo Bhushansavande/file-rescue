@@ -1,6 +1,6 @@
 """Undelete test on REAL file systems made by the real drivers (Linux, needs root or sudo).
 
-For FAT32, exFAT and NTFS it: formats an image, mounts it, copies a folder tree (long and
+For FAT32, exFAT, NTFS and ext4 it: formats an image, mounts it, copies a folder tree (long and
 non-ASCII names included), deletes some files, unmounts, then checks that `undelete`
 recovers every deleted file byte for byte under its original path, and that files whose
 space was reused afterwards are reported as overwritten. Also tests an MBR-partitioned disk.
@@ -109,6 +109,9 @@ def format_and_fill(kind, img, src, offset=0, overwrite=False):
         if kind == "exFAT":
             run(["mkfs.exfat", loop], sudo=True)
             run(["mount.exfat-fuse", "-o", f"uid={os.getuid()},allow_other", loop, mnt], sudo=True)
+        elif kind == "ext4":
+            run(["mkfs.ext4", "-q", "-F", loop], sudo=True)
+            run(["mount", loop, mnt], sudo=True)
         else:
             run(["mkntfs", "-F", "-Q", loop], sudo=True)
             run(["ntfs-3g", loop, mnt], sudo=True)
@@ -142,6 +145,8 @@ def check(kind, img, src, expect_overwritten=False):
                 # a name that fits 8.3 has no long-name entry; FAT erases its first letter on delete
                 head, _, leaf = rel.rpartition("/")
                 e = entries.get((head + "/" if head else "") + "_" + leaf[1:])
+            if e is None and kind == "ext4" and not TREE[rel]:
+                continue          # an empty file has nothing to recover
             if e is None and expect_overwritten:
                 continue          # new files reused the freed directory entry: expected
             if e is None:
@@ -179,6 +184,13 @@ def fuzz(kind, img, rounds=40):
         hot = [v._mft_record_offset(0)]
     elif v.label == "exFAT":
         hot = [v.heap_off, v.fat_off]
+    elif v.label.startswith("ext"):
+        with open(img, "rb", buffering=0) as f2:
+            v.f = f2
+            hot = [v.gdesc(0)[1] * v.bs, 1024]
+            jm = v.block_map(v.read_inode(v.journal_ino)) if v.journal_ino else None
+            if jm:
+                hot.append(jm[0][1] * v.bs)
     else:
         hot = [v.root_start, v.data_start, v.fat_start]
     size = os.path.getsize(img)
@@ -217,6 +229,8 @@ def main():
         kinds.append("exFAT")
     if have("mkntfs", "ntfs-3g"):
         kinds.append("NTFS")
+    if have("mkfs.ext4", "mount"):
+        kinds.append("ext4")
     if not have("losetup"):
         print("losetup not available: nothing to test")
         return 0
@@ -231,7 +245,7 @@ def main():
                     with open(img, "wb") as f:
                         f.truncate(96 * 1024 * 1024)
                     if variant == "mbr":
-                        ptype = {"FAT32": 0x0C, "exFAT": 0x07, "NTFS": 0x07}[kind]
+                        ptype = {"FAT32": 0x0C, "exFAT": 0x07, "NTFS": 0x07, "ext4": 0x83}[kind]
                         with open(img, "r+b") as f:
                             mbr = bytearray(512)
                             mbr[446 + 4] = ptype

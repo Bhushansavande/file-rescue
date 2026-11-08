@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0]: 2026-11-08
+
+### Added
+- **ext2/ext3/ext4 undelete** with names and folders. Deleted files lose their block list on ext3/4, so old copies are read from the journal (jbd2) and from unused space in directory blocks. Tested against files deleted by the real Linux kernel.
+- **Resume**: `filerescue carve --resume` continues an interrupted scan (also after Ctrl+C); progress is saved in the output folder.
+- **Fragmented files**: `--fragments` (and a window checkbox) joins two-piece JPEG photos and MP4/MOV videos, verified by decoding / by the video index; `--cluster-size` sets the cluster size.
+- **Integrity check**: recovered files are checked and marked `suspect` (report, CSV, window, CLI). Covers PNG checksums, ZIP members, MP4 index, PDF end, runs of zeros, and full photo decoding with Pillow.
+- New formats: **MP3 without ID3, AAC (ADTS), FLAC, FLV**, and **legacy Office files (DOC, XLS, PPT, MSG)**.
+- **Guide website** in `site/`: step-by-step help for people who just deleted something, published with GitHub Pages (`.github/workflows/pages.yml`).
+
+### Fixed
+- A JPEG cut short and followed by another picture was reported complete with the second picture glued on; a second start-of-image now ends the file as partial.
+- An MP4/MOV without its index (moov box) is no longer reported complete.
+
 ## [0.2.2]: 2026-10-30
 
 ### Security

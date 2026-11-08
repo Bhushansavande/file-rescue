@@ -623,6 +623,351 @@ class Ntfs:
                        ext, note=note)
 
 
+# ================================================================== ext2 / ext3 / ext4
+
+class Ext4:
+    """ext2/3/4. Deleting a file on ext3/ext4 clears its block map, so the old copy of the inode is
+    looked up in the journal (jbd2), which keeps recent versions of metadata blocks. ext2 keeps the
+    block map. Names come from live directories, journaled directory blocks and the unused space
+    inside directory blocks. Works only while the journal has not been overwritten."""
+
+    label = "ext4"
+    JMAGIC = 0xC03B3998
+
+    def __init__(self, f, base, boot):
+        self.f, self.base = f, base
+        sb = read_at(f, base + 1024, 1024)
+        if len(sb) < 1024 or struct.unpack_from("<H", sb, 56)[0] != 0xEF53:
+            raise UnsupportedFs("not ext")
+        self.bs = 1024 << struct.unpack_from("<I", sb, 24)[0]
+        if not 1024 <= self.bs <= 65536:
+            raise UnsupportedFs("bad block size")
+        self.first_data = struct.unpack_from("<I", sb, 20)[0]
+        self.bpg = struct.unpack_from("<I", sb, 32)[0]
+        self.ipg = struct.unpack_from("<I", sb, 40)[0]
+        self.isize = struct.unpack_from("<H", sb, 88)[0] or 128
+        self.compat = struct.unpack_from("<I", sb, 92)[0]
+        self.incompat = struct.unpack_from("<I", sb, 96)[0]
+        self.blocks = struct.unpack_from("<I", sb, 4)[0]
+        if self.incompat & 0x80:
+            self.blocks |= struct.unpack_from("<I", sb, 336)[0] << 32
+        self.desc = (struct.unpack_from("<H", sb, 254)[0] or 64) if self.incompat & 0x80 else 32
+        self.journal_ino = struct.unpack_from("<I", sb, 224)[0] if self.compat & 4 else 0
+        if not self.bpg or not self.ipg or not 128 <= self.isize <= self.bs or self.desc < 32:
+            raise UnsupportedFs("bad ext geometry")
+        self.groups = (self.blocks - self.first_data + self.bpg - 1) // self.bpg
+        if self.groups <= 0 or self.groups > 1_000_000:
+            raise UnsupportedFs("bad ext geometry")
+        self.label = "ext4" if self.incompat & 0x40 else ("ext3" if self.compat & 4 else "ext2")
+        self._gd, self._bm, self._jv = {}, {}, None
+
+    @staticmethod
+    def looks_like(f, base=0):
+        sb = read_at(f, base + 1024, 64)
+        return len(sb) >= 58 and struct.unpack_from("<H", sb, 56)[0] == 0xEF53
+
+    def blk(self, n):
+        if n <= 0 or n >= self.blocks:
+            return b"\0" * self.bs
+        d = read_at(self.f, self.base + n * self.bs, self.bs)
+        return d + b"\0" * (self.bs - len(d))
+
+    def gdesc(self, g):
+        if g not in self._gd:
+            gdt = self.first_data + 1
+            raw = read_at(self.f, self.base + gdt * self.bs + g * self.desc, self.desc)
+            if len(raw) < self.desc:
+                raise UnsupportedFs("group descriptor outside the drive")
+            bb, it = struct.unpack_from("<I", raw, 0)[0], struct.unpack_from("<I", raw, 8)[0]
+            if self.desc >= 64:
+                bb |= struct.unpack_from("<I", raw, 32)[0] << 32
+                it |= struct.unpack_from("<I", raw, 40)[0] << 32
+            self._gd[g] = (bb, it)
+        return self._gd[g]
+
+    def inode_loc(self, ino):
+        g, idx = divmod(ino - 1, self.ipg)
+        if ino < 1 or g >= self.groups:
+            return None
+        return self.gdesc(g)[1] * self.bs + idx * self.isize
+
+    def read_inode(self, ino):
+        loc = self.inode_loc(ino)
+        raw = read_at(self.f, self.base + loc, self.isize) if loc is not None else b""
+        return raw if len(raw) >= 128 else None
+
+    def block_free(self, n):
+        g, i = divmod(n - self.first_data, self.bpg)
+        if g < 0 or g >= self.groups:
+            return False
+        if g not in self._bm:
+            self._bm[g] = self.blk(self.gdesc(g)[0])
+        return not self._bm[g][i >> 3] >> (i & 7) & 1
+
+    # ---- block maps
+    def block_map(self, inode):
+        """[(logical, physical, length)] or None when the map is unreadable or empty."""
+        flags = struct.unpack_from("<I", inode, 32)[0]
+        ib = inode[40:100]
+        out = []
+        ok = self._extents(ib, out, 0) if flags & 0x80000 else self._legacy(ib, out)
+        return out if ok and out else None
+
+    def _extents(self, node, out, depth):
+        if len(node) < 12 or struct.unpack_from("<H", node, 0)[0] != 0xF30A or depth > 5:
+            return False
+        n, _mx, dep = struct.unpack_from("<HHH", node, 2)
+        for i in range(min(n, (len(node) - 12) // 12)):
+            e = node[12 + 12 * i:24 + 12 * i]
+            if dep == 0:
+                lb, ln, hi, lo = struct.unpack("<IHHI", e)
+                out.append((lb, hi << 32 | lo, ln - 32768 if ln > 32768 else ln))
+            else:
+                lo, hi = struct.unpack_from("<IH", e, 4)
+                if not self._extents(self.blk(hi << 32 | lo), out, depth + 1):
+                    return False
+            if len(out) > 1_000_000:
+                return False
+        return True
+
+    def _legacy(self, ib, out):
+        ptr, per = struct.unpack("<15I", ib), self.bs // 4
+
+        def add(lb, pb):
+            if not pb:
+                return
+            if out and out[-1][0] + out[-1][2] == lb and out[-1][1] + out[-1][2] == pb:
+                out[-1] = (out[-1][0], out[-1][1], out[-1][2] + 1)
+            else:
+                out.append((lb, pb, 1))
+
+        def walk(b, lvl, start):
+            if not b or b >= self.blocks or len(out) > 1_000_000:
+                return
+            tab = struct.unpack("<%dI" % per, self.blk(b))
+            for k, v in enumerate(tab):
+                if lvl == 1:
+                    add(start + k, v)
+                else:
+                    walk(v, lvl - 1, start + k * per ** (lvl - 1))
+
+        for i in range(12):
+            add(i, ptr[i])
+        start = 12
+        for lvl in (1, 2, 3):
+            walk(ptr[11 + lvl], lvl, start)
+            start += per ** lvl
+        return True
+
+    # ---- journal
+    def journal(self):
+        """{fs_block: [journal_block, ...]} oldest to newest, from the transactions still in the log."""
+        if self._jv is not None:
+            return self._jv
+        self._jv = {}
+        ino = self.read_inode(self.journal_ino) if self.journal_ino else None
+        m = self.block_map(ino) if ino else None
+        if not m:
+            return self._jv
+        jmap = {}
+        for lb, pb, ln in m:
+            for k in range(min(ln, 1 << 22)):
+                jmap[lb + k] = pb + k
+        sbj = self.blk(jmap[0]) if 0 in jmap else b""
+        if len(sbj) < 64 or struct.unpack_from(">I", sbj, 0)[0] != self.JMAGIC \
+                or struct.unpack_from(">I", sbj, 12)[0] != self.bs:
+            return self._jv
+        inc = struct.unpack_from(">I", sbj, 40)[0]
+        v3, is64 = bool(inc & 0x10), bool(inc & 0x2)
+        tag = 16 if v3 else (12 if is64 else 8)
+        tail = 4 if inc & 0x18 else 0
+        entries = []                                       # (sequence, position, fs_block, journal_block)
+        j, last = 1, max(jmap) + 1
+        while j < last:
+            raw = self.blk(jmap[j]) if j in jmap else b""
+            if struct.unpack_from(">II", raw, 0) != (self.JMAGIC, 1):
+                j += 1
+                continue
+            seq = struct.unpack_from(">I", raw, 8)[0]
+            pos, k = 12, 0
+            while pos + tag <= self.bs - tail:
+                nr = struct.unpack_from(">I", raw, pos)[0]
+                flags = struct.unpack_from(">I", raw, pos + 4)[0] if v3 else struct.unpack_from(">H", raw, pos + 6)[0]
+                if is64:
+                    nr |= struct.unpack_from(">I", raw, pos + 8)[0] << 32
+                k += 1
+                if j + k in jmap and not flags & 4:
+                    entries.append((seq, j + k, nr, jmap[j + k], bool(flags & 1)))
+                pos += tag + (0 if flags & 2 else 16)
+                if flags & 8:
+                    break
+            j += k + 1
+        entries.sort(key=lambda e: (e[0] & 0xFFFFFFFF, e[1]))
+        for _s, _p, nr, jb, esc in entries:
+            self._jv.setdefault(nr, []).append((jb, esc))
+        return self._jv
+
+    def jblock(self, item):
+        jb, esc = item
+        d = self.blk(jb)
+        return struct.pack(">I", self.JMAGIC) + d[4:] if esc else d
+
+    def old_inodes(self, ino):
+        """Journaled copies of this inode, newest first."""
+        loc = self.inode_loc(ino)
+        if loc is None:
+            return
+        fsblk, off = divmod(loc, self.bs)
+        for item in reversed(self.journal().get(fsblk, [])):
+            d = self.jblock(item)[off:off + self.isize]
+            if len(d) >= 128:
+                yield d
+
+    # ---- directories
+    def _dirents(self, data, slack):
+        """(inode, name, file_type, deleted) from one directory block."""
+        off = 0
+        while off + 12 <= len(data):
+            ino, rl, nl, ft = struct.unpack_from("<IHBB", data, off)
+            if rl < 12 or rl % 4 or off + rl > len(data) or nl + 8 > rl:
+                return
+            if ino and nl:
+                yield ino, data[off + 8:off + 8 + nl].decode("utf-8", "replace"), ft, False
+            if slack:
+                p = off + (8 + ((nl + 3) & ~3) if ino else 8)
+                while p + 12 <= off + rl:
+                    i2, r2, n2, f2 = struct.unpack_from("<IHBB", data, p)
+                    if 0 < i2 <= self.ipg * self.groups and n2 and r2 % 4 == 0 and 8 + n2 <= r2 \
+                            and p + r2 <= off + rl and 1 <= f2 <= 2:
+                        yield i2, data[p + 8:p + 8 + n2].decode("utf-8", "replace"), f2, True
+                        p += max(r2, 8 + ((n2 + 3) & ~3))
+                    else:
+                        p += 4
+            off += rl
+
+    def dir_blocks(self, ino):
+        inode = self.read_inode(ino)
+        if inode is None or struct.unpack_from("<H", inode, 0)[0] & 0xF000 != 0x4000:
+            return []
+        m = self.block_map(inode) or []
+        return [pb + k for _l, pb, ln in m for k in range(min(ln, 4096))][:16384]
+
+    def _fsize(self, rec):
+        return struct.unpack_from("<I", rec, 4)[0] | struct.unpack_from("<I", rec, 108)[0] << 32
+
+    def entries(self):
+        names, dirs = {}, {2: ("", 2)}     # names: inode -> (name, parent); dirs: dir inode -> (name, parent)
+        seen_dirs, queue = set(), [2]
+        live = []
+        while queue and len(seen_dirs) < 200000:
+            d = queue.pop()
+            if d in seen_dirs:
+                continue
+            seen_dirs.add(d)
+            for b in self.dir_blocks(d):
+                for ino, name, ft, deleted in self._dirents(self.blk(b), True):
+                    if name in (".", ".."):
+                        continue
+                    if deleted:
+                        names.setdefault(ino, (name, d))
+                    elif ft == 2:
+                        dirs[ino] = (name, d)
+                        queue.append(ino)
+                    elif ft == 1:
+                        names[ino] = (name, d)
+                        live.append(ino)
+        # directory blocks that only exist in the journal give names of files deleted from them
+        for fsblk, items in self.journal().items():
+            for item in reversed(items):
+                data = self.jblock(item)
+                head = list(self._dirents(data[:48], False))[:2]
+                if len(head) == 2 and head[0][1] == "." and head[1][1] == "..":
+                    here = head[0][0]
+                    for ino, name, ft, _d in self._dirents(data, True):
+                        if name not in (".", "..") and ft == 1 and ino not in names:
+                            names[ino] = (name, here)
+
+        def dir_path(d, depth=0):
+            if d == 2 or depth > MAX_DEPTH:
+                return ""
+            if d not in dirs:
+                return "_lost_dir_%d/" % d
+            name, parent = dirs[d]
+            return dir_path(parent, depth + 1) + name.replace("/", "_") + "/"
+
+        count = 0
+        for ino in live:
+            rec = self.read_inode(ino)
+            if rec is None or struct.unpack_from("<H", rec, 0)[0] & 0xF000 != 0x8000:
+                continue
+            e = self._make(dir_path(names[ino][1]) + names[ino][0], rec, False)
+            if e:
+                yield e
+        for g in range(self.groups):
+            try:
+                it = self.gdesc(g)[1]
+            except UnsupportedFs:
+                return
+            if it <= 0 or it >= self.blocks:
+                continue
+            table = read_at(self.f, self.base + it * self.bs, min(self.ipg * self.isize, 256 << 20))
+            for idx in range(len(table) // self.isize):
+                rec = table[idx * self.isize:(idx + 1) * self.isize]
+                if rec[20:24] == b"\0\0\0\0":              # dtime == 0: never deleted
+                    continue
+                ino = g * self.ipg + idx + 1
+                count += 1
+                if count > MAX_ENTRIES:
+                    return
+                e = self._deleted(ino, rec, names, dir_path)
+                if e:
+                    yield e
+
+    def _deleted(self, ino, rec, names, dir_path):
+        best = None
+        for cand in [rec, *self.old_inodes(ino)]:
+            mode = struct.unpack_from("<H", cand, 0)[0]
+            if mode & 0xF000 != 0x8000:
+                continue
+            if self.block_map(cand) and self._fsize(cand):
+                best = cand
+                break
+        if best is None or not self._fsize(best):
+            return None
+        if ino in names:
+            name, parent = names[ino]
+            path = dir_path(parent) + name
+        else:
+            path = "_unnamed/inode_%d" % ino
+        return self._make(path, best, True)
+
+    def _make(self, path, rec, deleted):
+        size = self._fsize(rec)
+        mtime = struct.unpack_from("<I", rec, 16)[0]
+        try:
+            mod = datetime.utcfromtimestamp(mtime) if mtime else None
+        except (OverflowError, OSError, ValueError):
+            mod = None
+        m = self.block_map(rec)
+        if not m:
+            return None
+        ext, left, free, prev = [], size, True, 0
+        for lb, pb, ln in sorted(m):
+            if lb * self.bs < size and lb > prev:          # hole = zeros
+                ext.append((None, (lb - prev) * self.bs))
+            take = min(ln * self.bs, max(0, size - lb * self.bs))
+            if take <= 0:
+                continue
+            ext.append((self.base + pb * self.bs, take))
+            prev = lb + ln
+            if deleted and any(not self.block_free(pb + k) for k in range(0, ln, max(1, ln // 64))):
+                free = False
+        ext = _merge([(o, min(l, 1 << 50)) for o, l in ext])
+        note = "" if not deleted else "found through the journal"
+        status = ("intact" if free else "overwritten") if deleted else "ok"
+        return FsEntry(path, size, deleted, mod, status, ext, note=note)
+
+
 # ================================================================== detection and recovery
 
 def _partitions(f):
@@ -665,6 +1010,8 @@ def open_filesystems(f):
                 out.append((label, ExFat(f, base, boot)))
             elif Fat.looks_like(boot):
                 out.append((label, Fat(f, base, boot)))
+            elif Ext4.looks_like(f, base):
+                out.append((label, Ext4(f, base, boot)))
         except (UnsupportedFs, struct.error, ValueError):
             continue
         if base == 0 and out:
